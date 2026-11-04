@@ -46,6 +46,7 @@ function chatUrl(config:AppConfig):string{
  let parsed:URL;
  try{parsed=new URL(base);}catch{throw new Error('Enter a valid HTTPS API base URL in Settings.');}
  if(parsed.protocol!=='https:'||!parsed.hostname)throw new Error('API endpoints must use HTTPS. Plain HTTP endpoints are blocked to protect prompts and credentials.');
+ if(parsed.username||parsed.password||parsed.search||parsed.hash)throw new Error('API base URLs must not embed credentials, query strings or fragments.');
  if(!config.model.trim())throw new Error('Set a model identifier in Settings.');
  return base.endsWith('/chat/completions')?base:base+'/chat/completions';
 }
@@ -130,8 +131,7 @@ async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:To
  if(!localContext)throw new Error('No local GGUF model is loaded. Open Models and install one first.');
  const result=await localContext.completion({
   messages,
-  tools:tools.map(item=>({type:item.type,function:item.function})),
-  tool_choice:'auto',
+  ...(tools.length?{tools:tools.map(item=>({type:item.type,function:item.function})),tool_choice:'auto'}:{}),
   n_predict:2048,
   temperature:config.temperature,
   stop:['</s>','<|end|>','<|eot_id|>','<|end_of_turn|>'],
