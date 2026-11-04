@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          gradle -p android assembleDebug --stacktrace > android-build.log 2>&1
+          gradle -p android -PreactNativeArchitectures=arm64-v8a assembleDebug --stacktrace > android-build.log 2>&1
           code=$?
           tail -n 160 android-build.log
           echo "$code" > android-build.exit
