@@ -9,12 +9,23 @@ type Props={
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
+ needsSetup:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
 };
 export default function ChatScreen(p:Props){
  const[draft,setDraft]=useState(''),[actions,setActions]=useState(false);
+ const[providerUrl,setProviderUrl]=useState('https://api.openai.com/v1');
+ const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState('');
+ const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
- const send=()=>{const value=draft.trim();if(!value||p.busy)return;setDraft('');p.onSend(value);};
+ const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;setDraft('');p.onSend(value);};
+ const connect=async()=>{
+  if(!providerUrl.trim()){setConnectError('Paste your provider URL first.');return;}
+  setConnecting(true);setConnectError('');
+  try{await p.onConnectProvider(providerUrl,providerKey,providerModel);}
+  catch(error){setConnectError(error instanceof Error?error.message:String(error));}
+  finally{setConnecting(false);}
+ };
  const quick=(action:'image'|'video'|'models'|'connectors'|'gallery')=>{setActions(false);if(action==='image')setDraft('Create an image of ');else if(action==='video')setDraft('Create a video of ');else p.onQuickAction(action);};
  const empty=p.messages.length===0&&!p.liveText;
  return <KeyboardAvoidingView style={s.root} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={0}>
@@ -24,16 +35,34 @@ export default function ChatScreen(p:Props){
    {p.speechActive?<Pressable style={s.stopSpeech} onPress={p.onStopSpeech}><Text style={s.stopSpeechText}>Stop voice</Text></Pressable>:null}
    <Pressable style={s.topAction} onPress={p.onModels}><Text style={s.topActionText}>＋</Text></Pressable>
   </View>
-  {empty?<View style={s.welcome}>
+  {empty?<ScrollView style={s.welcomeScroll} contentContainerStyle={s.welcome} keyboardShouldPersistTaps="handled">
     <View style={s.logo}><Text style={s.logoGlyph}>✳</Text></View>
-    <Text style={s.welcomeTitle}>What can I do for you today?</Text>
-    <Text style={s.welcomeSubtitle}>Your personal AI. Run a model on this phone or connect the provider you prefer.</Text>
-    <View style={s.suggestions}>
+    <Text style={s.welcomeTitle}>{p.needsSetup?'Your AI starts here':'What can I do for you today?'}</Text>
+    <Text style={s.welcomeSubtitle}>{p.needsSetup?'Connect a provider or choose a local model. Pocket Buddy will do the setup for you.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
+    {p.needsSetup?<View style={s.setupCard}>
+     <Text style={s.setupEyebrow}>QUICK SETUP</Text>
+     <Text style={s.setupTitle}>Connect your AI</Text>
+     <Text style={s.setupCopy}>Paste an OpenAI-compatible provider URL. We’ll find an available chat model and test the connection automatically.</Text>
+     <Text style={s.setupLabel}>Provider URL</Text>
+     <TextInput value={providerUrl} onChangeText={setProviderUrl} placeholder="https://api.provider.com/v1" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.setupInput}/>
+     <Text style={s.setupLabel}>API key <Text style={s.setupOptional}>(optional for private endpoints)</Text></Text>
+     <TextInput value={providerKey} onChangeText={setProviderKey} placeholder="Paste your API key" placeholderTextColor="#777781" secureTextEntry autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
+     <Text style={s.setupLabel}>Model ID <Text style={s.setupOptional}>(leave blank to auto-detect)</Text></Text>
+     <TextInput value={providerModel} onChangeText={setProviderModel} placeholder="Auto-detect from provider" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
+     {connectError?<Text style={s.setupError}>{connectError}</Text>:null}
+     <Pressable style={[s.connectButton,connecting&&s.connectButtonBusy]} onPress={connect} disabled={connecting}>
+      {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
+     </Pressable>
+     <Pressable style={s.localButton} onPress={()=>p.onQuickAction('models')} disabled={connecting}>
+      <Text style={s.localButtonText}>Or use a local model on this phone</Text>
+     </Pressable>
+     <Text style={s.setupPrivacy}>Your API key is stored in Android secure storage. It is not saved in chat history.</Text>
+    </View>:<View style={s.suggestions}>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Explain a complex topic in simple terms')}><Text style={s.suggestionText}>Explain a complex topic</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Search the web for the latest developments in ')}><Text style={s.suggestionText}>Search the web</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Create an image of ')}><Text style={s.suggestionText}>Create images and videos</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
-    </View>
-   </View>:<FlatList ref={list} style={s.messages} contentContainerStyle={s.messageList} data={p.messages} keyExtractor={m=>m.id}
+    </View>}
+   </ScrollView>:<FlatList ref={list} style={s.messages} contentContainerStyle={s.messageList} data={p.messages} keyExtractor={m=>m.id}
     renderItem={({item})=><View style={[s.messageRow,item.role==='user'?s.userRow:s.assistantRow]}>
       {item.role==='assistant'&&<View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View>}
       <View style={[s.bubble,item.role==='user'?s.userBubble:s.assistantBubble]}>
@@ -50,11 +79,11 @@ export default function ChatScreen(p:Props){
     <Pressable style={[s.toolsPill,p.toolsEnabled&&s.toolsPillActive]} onPress={p.onToggleTools}><Text style={[s.toolsText,p.toolsEnabled&&s.toolsTextActive]}>✧ Tools {p.toolsEnabled?'On':'Off'}</Text></Pressable>
    </View>
    <View style={s.composer}>
-    <TextInput value={draft} onChangeText={setDraft} placeholder="Message Pocket Buddy" placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
+    <TextInput value={draft} onChangeText={setDraft} placeholder={p.needsSetup?"Connect an AI to start chatting":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.needsSetup} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
     <View style={s.composerBottom}>
      <Pressable style={s.plusButton} onPress={()=>setActions(true)}><Text style={s.plus}>＋</Text></Pressable>
      <Text style={s.inputHint}>Local or API · Your choice</Text>
-     <Pressable style={[s.sendButton,(!draft.trim()||p.busy)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
+     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.needsSetup}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
     </View>
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
@@ -92,7 +121,22 @@ const s=StyleSheet.create({
  menuButton:{width:38,height:38,borderRadius:19,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},
  menuIcon:{color:C.text,fontSize:19},brand:{flex:1,color:C.text,fontSize:17,fontWeight:'700'},
  topAction:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},topActionText:{color:C.text,fontSize:23,marginTop:-2},
- welcome:{flex:1,justifyContent:'center',alignItems:'center',paddingHorizontal:22,paddingBottom:32},
+ welcomeScroll:{flex:1},
+ welcome:{flexGrow:1,justifyContent:'center',alignItems:'center',paddingHorizontal:22,paddingTop:18,paddingBottom:32},
+ setupCard:{width:'100%',maxWidth:430,backgroundColor:'#19191e',borderWidth:1,borderColor:'#373740',borderRadius:20,padding:16,marginTop:22},
+ setupEyebrow:{color:'#9fc0ff',fontSize:9,fontWeight:'800',letterSpacing:1.5},
+ setupTitle:{color:C.text,fontSize:19,fontWeight:'800',marginTop:6},
+ setupCopy:{color:C.muted,fontSize:11,lineHeight:17,marginTop:6,marginBottom:8},
+ setupLabel:{color:'#d8d8df',fontSize:10,fontWeight:'700',marginTop:10,marginBottom:6},
+ setupOptional:{color:'#81818d',fontWeight:'400'},
+ setupInput:{backgroundColor:'#222228',borderWidth:1,borderColor:'#3b3b45',borderRadius:11,color:C.text,paddingHorizontal:11,paddingVertical:10,fontSize:12},
+ setupError:{color:'#ffb4b4',fontSize:11,lineHeight:16,marginTop:10},
+ connectButton:{minHeight:43,backgroundColor:'#f0f0f2',borderRadius:13,alignItems:'center',justifyContent:'center',marginTop:14,paddingHorizontal:12},
+ connectButtonBusy:{opacity:0.75},
+ connectButtonText:{color:'#111',fontSize:12,fontWeight:'800'},
+ localButton:{alignItems:'center',paddingVertical:13},
+ localButtonText:{color:'#c7d5f2',fontSize:11,fontWeight:'700'},
+ setupPrivacy:{color:'#777781',fontSize:9,lineHeight:13,textAlign:'center'},
  logo:{width:66,height:66,borderRadius:33,backgroundColor:'#242429',alignItems:'center',justifyContent:'center',marginBottom:19},
  logoGlyph:{color:'#fff',fontSize:38},welcomeTitle:{color:C.text,fontWeight:'700',fontSize:25,textAlign:'center'},
  welcomeSubtitle:{color:C.muted,fontSize:13,lineHeight:20,textAlign:'center',marginTop:10,maxWidth:315},
