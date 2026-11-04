@@ -9,7 +9,7 @@ import SettingsScreen from'./screens/SettingsScreen';
 import MediaScreen from'./screens/MediaScreen';
 import{runAgent,type ConfirmTool}from'./services/agent';
 import{listConversations,saveConversation}from'./services/database';
-import{loadConfig,saveConfig}from'./services/storage';
+import{getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/storage';\nimport{discoverAndTestProvider}from'./services/providerSetup';
 import{loadLocalModel,releaseLocalModel}from'./services/llm';
 import{readAloud,stopSpeech}from'./services/speech';
 import type{AppConfig,ChatMessage,Conversation}from'./types';
@@ -21,27 +21,68 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
- const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false);
+ const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false),[setupComplete,setSetupComplete]=useState(false);
 
  useEffect(()=>{
   let mounted=true;
   (async()=>{
    try{
-    const [stored,savedConfig,localUri,activeModel]=await Promise.all([
-     listConversations(),loadConfig(),AsyncStorage.getItem('pocket-buddy.local-model-uri'),AsyncStorage.getItem('pocket-buddy.active-model'),
+    const [savedConfig,localUri,activeModel,setupMarker,providerKey]=await Promise.all([
+     loadConfig(),
+     AsyncStorage.getItem('pocket-buddy.local-model-uri'),
+     AsyncStorage.getItem('pocket-buddy.active-model'),
+     AsyncStorage.getItem('pocket-buddy.setup-complete'),
+     getProviderKey(),
     ]);
     if(!mounted)return;
-    setConversations(stored);setConfig(savedConfig);
+    setConfig(savedConfig);
+    const localReady=savedConfig.mode==='local'&&!!localUri;
+    const apiReady=savedConfig.mode==='api'&&!!savedConfig.baseUrl&&!!savedConfig.model&&(setupMarker==='true'||!!providerKey);
+    setSetupComplete(localReady||apiReady);
     if(savedConfig.mode==='local'&&localUri){
-     try{await loadLocalModel(localUri);if(mounted)setModelName(activeModel||'Local model');}
-     catch(error){if(mounted){setModelName('Local model unavailable');setBootError(error instanceof Error?error.message:String(error));}}
-    }else if(savedConfig.mode==='api'){setModelName(savedConfig.model||'API model');}
-    if(stored.length){const recent=stored[0];setActiveId(recent.id);setMessages(recent.messages);}
-   }catch(error){if(mounted)setBootError(error instanceof Error?error.message:String(error));}
-   finally{if(mounted)setReady(true);}
+     setModelName(activeModel||'Loading local model…');
+     setReady(true);
+     void loadLocalModel(localUri).then(()=>{
+      if(mounted)setModelName(activeModel||'Local model');
+     }).catch(error=>{
+      if(mounted){
+       setModelName('Local model unavailable');
+       setSetupComplete(false);
+       setBootError(error instanceof Error?error.message:String(error));
+      }
+     });
+    }else{
+     setModelName(savedConfig.mode==='api'?(savedConfig.model||'Connect an AI'):'Choose a local model');
+     setReady(true);
+    }
+   }catch(error){
+    if(mounted){
+     setBootError(error instanceof Error?error.message:String(error));
+     setModelName('Connect an AI');
+     setSetupComplete(false);
+    }
+   }finally{
+    if(mounted)setReady(true);
+   }
   })();
   return()=>{mounted=false;releaseLocalModel().catch(()=>{});};
  },[]);
+ useEffect(()=>{
+  if(!ready)return;
+  let mounted=true;
+  listConversations().then(stored=>{
+   if(!mounted)return;
+   setConversations(stored);
+   if(stored.length){
+    const recent=stored[0];
+    setActiveId(recent.id);
+    setMessages(recent.messages);
+   }
+  }).catch(error=>{
+   if(mounted)setBootError('Chat history could not be loaded: '+(error instanceof Error?error.message:String(error)));
+  });
+  return()=>{mounted=false;};
+ },[ready]);
  useEffect(()=>{
   const sub=BackHandler.addEventListener('hardwareBackPress',()=>{
    if(menuOpen){setMenuOpen(false);return true;}
@@ -84,6 +125,20 @@ function BuddyApp(){
    try{await saveCurrent(id,complete,title);}catch{}
   }finally{setBusy(false);setStatus('');}
  };
+ const connectProvider=async(url:string,key:string,model:string)=>{
+  const result=await discoverAndTestProvider(url,key,model);
+  const current=config||await loadConfig();
+  const next={...current,mode:'api' as const,baseUrl:result.baseUrl,model:result.model};
+  await saveProviderKey(key);
+  await saveConfig(next);
+  await AsyncStorage.setItem('pocket-buddy.setup-complete','true');
+  await releaseLocalModel();
+  setConfig(next);
+  setModelName(result.model);
+  setSetupComplete(true);
+  setBootError('');
+  setScreen('chat');
+ };
  const playMessage=async(content:string)=>{try{setSpeechActive(true);await readAloud(content);}catch(error){Alert.alert('Voice playback unavailable',error instanceof Error?error.message:String(error));}finally{setSpeechActive(false);}};
  const stopVoice=async()=>{try{await stopSpeech();}catch{}finally{setSpeechActive(false);}};
  const newChat=()=>{if(busy)return;setActiveId('');setMessages([]);setLiveText('');setScreen('chat');setMenuOpen(false);};
@@ -91,21 +146,38 @@ function BuddyApp(){
  const chooseChat=(item:Conversation)=>{if(busy)return;setActiveId(item.id);setMessages(item.messages);setLiveText('');setScreen('chat');setMenuOpen(false);};
  const deleteChat=(item:Conversation)=>Alert.alert('Delete conversation?','This permanently removes the chat from this device.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{const{deleteConversation}=await import('./services/database');await deleteConversation(item.id);const next=conversations.filter(chat=>chat.id!==item.id);setConversations(next);if(activeId===item.id){setActiveId('');setMessages([]);}}}]);
  const modelLoaded=(name:string,uri:string)=>{
-  setModelName(name);setScreen('chat');
-  const update=async()=>{const current=await loadConfig();const next={...current,mode:'local' as const};await saveConfig(next);setConfig(next);};
+  setModelName(name);setScreen('chat');setSetupComplete(true);
+  const update=async()=>{
+   const current=await loadConfig();
+   const next={...current,mode:'local' as const};
+   await saveConfig(next);
+   await AsyncStorage.setItem('pocket-buddy.setup-complete','true');
+   setConfig(next);
+  };
   update().catch(error=>setBootError(String(error)));
   AsyncStorage.setItem('pocket-buddy.local-model-uri',uri).catch(()=>{});
  };
  const settingsSaved=async(next:AppConfig)=>{
   setConfig(next);
-  if(next.mode==='api'){await releaseLocalModel();setModelName(next.model||'API model');}
-  else{const uri=await AsyncStorage.getItem('pocket-buddy.local-model-uri');if(uri){try{await loadLocalModel(uri);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');}catch(e){setModelName('Local model unavailable');setBootError(e instanceof Error?e.message:String(e));}}else setModelName('Choose a local model');}
+  if(next.mode==='api'){
+   await releaseLocalModel();
+   const configured=!!next.baseUrl.trim()&&!!next.model.trim();
+   setSetupComplete(configured);
+   if(configured)await AsyncStorage.setItem('pocket-buddy.setup-complete','true');
+   setModelName(next.model||'Connect an AI');
+  }else{
+   const uri=await AsyncStorage.getItem('pocket-buddy.local-model-uri');
+   if(uri){
+    try{await loadLocalModel(uri);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
+    catch(e){setModelName('Local model unavailable');setSetupComplete(false);setBootError(e instanceof Error?e.message:String(e));}
+   }else{setModelName('Choose a local model');setSetupComplete(false);}
+  }
   setScreen('chat');
  };
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
