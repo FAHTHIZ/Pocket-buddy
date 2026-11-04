@@ -47,7 +47,7 @@ export default function MediaScreen({onBack}:Props){
     {job.outputs.map((output,index)=><Pressable key={output+index} onPress={()=>openOutput(output)} style={s.output}><Text style={s.outputText} numberOfLines={1}>{(()=>{try{return(JSON.parse(output)as Output).filename;}catch{return output;}})()}</Text><Text style={s.open}>Open ›</Text></Pressable>)}
     <View style={s.actions}>
      {job.status!=='complete'&&job.status!=='cancelled'&&job.status!=='failed'?<Pressable style={s.actionButton} onPress={()=>refresh(job)} disabled={busy}><Text style={s.actionText}>Check status</Text></Pressable>:null}
-     {['queued','running'].includes(job.status)?<Pressable style={s.cancelButton} onPress={()=>cancel(job)} disabled={busy}><Text style={s.cancelText}>Cancel job</Text></Pressable>:null}
+     {job.status==='queued'?<Pressable style={s.cancelButton} onPress={()=>cancel(job)} disabled={busy}><Text style={s.cancelText}>Cancel queued job</Text></Pressable>:null}
     </View>
    </View>)}
   </ScrollView>
