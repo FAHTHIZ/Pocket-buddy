@@ -143,6 +143,12 @@ export async function complete(messages:ModelMessage[],tools:ToolDefinition[],on
  const config=await loadConfig();
  return config.mode==='local'?localCompletion(config,messages,tools,onToken):apiCompletion(config,messages,tools,onToken);
 }
+export async function testProviderConnection():Promise<string>{
+ const config=await loadConfig();
+ if(config.mode!=='api')throw new Error('Switch to API provider mode to test this connection.');
+ const result=await apiCompletion(config,[{role:'user',content:'Reply with the single word OK.'}],[]);
+ return result.content.trim()||'The provider responded, but returned no text.';
+}
 export async function releaseLocalModel():Promise<void>{
  if(localContext){try{await localContext.release();}catch{}}
  localContext=null;activeLocalPath='';

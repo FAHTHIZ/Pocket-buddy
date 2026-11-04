@@ -84,6 +84,31 @@ export async function refreshMediaJob(promptId:string):Promise<string>{
  return status+(outputs.length?': '+outputs.length+' output file(s)':'');
 }
 export async function readMediaJobs():Promise<GenerationJob[]>{return listGenerationJobs();}
+
+export async function testMediaSetup():Promise<string[]>{
+ const config=await loadConfig();
+ if(!config.comfyUrl.trim())throw new Error('Enter your ComfyUI HTTPS server URL first.');
+ const [stats,objectInfo]=await Promise.all([request('/system_stats'),request('/object_info')]);
+ const report:string[]=['ComfyUI API: reachable'];
+ const system=stats?.system||{};
+ if(system.ram_total)report.push('Server RAM: '+Math.round(Number(system.ram_total)/1073741824*10)/10+' GB');
+ for(const [kind,raw] of [['Image',config.imageWorkflow],['Video',config.videoWorkflow]] as const){
+  if(!raw.trim()){report.push(kind+' workflow: not configured');continue;}
+  let workflow:any;
+  try{workflow=JSON.parse(raw);}catch{report.push(kind+' workflow: invalid JSON');continue;}
+  if(!workflow||typeof workflow!=='object'||Array.isArray(workflow)){report.push(kind+' workflow: expected API-format node JSON');continue;}
+  const nodes=Object.values(workflow) as any[];
+  if(!nodes.length){report.push(kind+' workflow: contains no nodes');continue;}
+  const nodeTypes=[...new Set(nodes.map(node=>typeof node?.class_type==='string'?node.class_type:'').filter(Boolean))];
+  if(!nodeTypes.length){report.push(kind+' workflow: export the workflow in ComfyUI API format');continue;}
+  const missing=nodeTypes.filter(type=>!Object.prototype.hasOwnProperty.call(objectInfo||{},type));
+  report.push(missing.length
+   ?kind+' workflow: missing node classes: '+missing.slice(0,8).join(', ')+(missing.length>8?'…':'')
+   :kind+' workflow: '+nodes.length+' nodes recognized; referenced node classes are installed');
+ }
+ report.push('This check does not verify model-weight files or guarantee a successful generation.');
+ return report;
+}
 export async function cancelMediaJob(promptId:string):Promise<void>{
  const job=(await listGenerationJobs()).find(item=>item.promptId===promptId);
  if(!job)throw new Error('That generation job is not in this Pocket Buddy media library.');
