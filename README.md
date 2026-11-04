@@ -4,7 +4,7 @@
 
 Pocket Buddy is an Android-first personal AI workspace. Its default experience is a familiar chat session, while the application independently manages local GGUF models, OpenAI-compatible providers, an agent/tool loop, MCP connectors and media-generation workflows.
 
-> Development status: Core app sources are in the repository. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation. Android build validation is being run in GitHub Actions; use the latest workflow artifact for the debug APK only after the run succeeds.
+> Development status: The first-run connection flow, standalone Android packaging and emulator launch smoke test are part of the build pipeline. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation.
 
 ## Product principles
 
@@ -82,16 +82,15 @@ Then run:
 
 Keep the keystore and passwords private, backed up securely, and out of Git. Without all four properties, Gradle produces an unsigned release APK.
 
-## First-run configuration
+## First-run experience
 
-1. Open Models from the menu.
-2. Search Hugging Face for GGUF models and select a quantization that matches your phone's RAM and storage.
-3. Install and load the model. Model loading can fail if the runtime memory footprint is larger than available RAM.
-4. Or open Settings and choose API provider, then enter a compatible base URL, model ID and API key.
-5. To enable web research, configure a SearXNG instance and turn on web search in Settings.
-6. Connect GitHub from Connectors with a personal access token. Use least-privilege scopes.
-7. Connect a trusted MCP Streamable HTTP endpoint from Connectors → MCP.
-8. Add a ComfyUI API URL and import API-format image/video workflow JSON in Settings. Include {{prompt}} in the positive prompt input.
+1. Open Pocket Buddy. The chat welcome screen appears first; chat-history restoration and local-model loading happen in the background.
+2. Paste an OpenAI-compatible provider URL and API key into the welcome card. The model ID is optional: Pocket Buddy queries the provider's `/models` endpoint, tries available chat models, and sends a small connection test.
+3. When the test succeeds, the provider is saved and the same screen becomes the normal chat session. The API key is stored using Android secure storage.
+4. To use an on-device model instead, choose **Use a local model** from the welcome card. Browse GGUF files, select a quantization and install it. Model loading can fail if the runtime memory footprint exceeds available RAM.
+5. Settings, Connectors and Media library remain available from the side drawer for optional advanced configuration. They are not required to connect a text provider and start chatting.
+
+A provider that does not expose `/models` can still be used by entering its exact model ID in the optional Model ID field. Provider URLs must be HTTPS and OpenAI-compatible. API keys are never accepted inside URLs.
 
 ## Agent tools
 
@@ -110,11 +109,11 @@ The agent caps tool rounds and the number of calls per round. Tool results and r
 
 ## One-link Android install
 
-The latest ARM64 test APK is published at this stable address after the Android validation workflow succeeds:
+The latest standalone ARM64 Android test APK is published at this stable address after the Android validation workflow succeeds. Unlike a React Native debug APK, this release APK includes the bundled JavaScript and does not need Metro running:
 
 **[Download Pocket Buddy for Android](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
 
-Android will ask you to confirm installation of an APK downloaded outside the Play Store. This is a debug-signed test build, not a production Play Store release. The link becomes available after the first successful release workflow.
+Android will ask you to confirm installation of an APK downloaded outside the Play Store. This is a CI test-signed release build, not a production Play Store signing identity. CI retains the test key in a repository-scoped Actions cache so test builds can update one another; maintainers must use a private keystore for production distribution. The workflow installs and launches an x86_64 release build in an Android emulator before publishing the ARM64 download.
 
 ## Media generation
 
