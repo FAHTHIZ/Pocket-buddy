@@ -5,7 +5,7 @@ export type{McpServerConfig}from'../types';
 const SETTINGS_KEY='pocket-buddy.settings.v1';
 const SERVICES={provider:'pocket-buddy.provider',github:'pocket-buddy.github',comfy:'pocket-buddy.comfy',voice:'pocket-buddy.voice'};
 const MCP_PREFIX='pocket-buddy.mcp.';
-export const DEFAULT_CONFIG:AppConfig={mode:'api',baseUrl:'https://api.openai.com/v1',model:'gpt-4o-mini',temperature:0.7,maxToolTurns:6,useWebSearch:false,searxngUrl:'',comfyUrl:'',imageWorkflow:'',videoWorkflow:'',voiceId:'',voiceModel:'eleven_multilingual_v2'};
+export const DEFAULT_CONFIG:AppConfig={mode:'api',baseUrl:'',model:'',temperature:0.7,maxToolTurns:6,useWebSearch:false,searxngUrl:'',comfyUrl:'',imageWorkflow:'',videoWorkflow:'',voiceId:'',voiceModel:'eleven_multilingual_v2'};
 export async function loadConfig():Promise<AppConfig>{try{const raw=await AsyncStorage.getItem(SETTINGS_KEY);return raw?{...DEFAULT_CONFIG,...JSON.parse(raw)}:DEFAULT_CONFIG;}catch{return DEFAULT_CONFIG;}}
 export async function saveConfig(value:AppConfig):Promise<void>{await AsyncStorage.setItem(SETTINGS_KEY,JSON.stringify(value));}
 async function saveSecret(service:string,value:string):Promise<void>{if(!value.trim()){await Keychain.resetGenericPassword({service});return;}await Keychain.setGenericPassword(service,value.trim(),{service,accessible:Keychain.ACCESSIBLE.WHEN_UNLOCKED_THIS_DEVICE_ONLY});}
