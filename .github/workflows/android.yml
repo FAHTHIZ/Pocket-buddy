@@ -28,7 +28,9 @@ jobs:
           java-version: '17'
       - name: Accept Android SDK licenses
         shell: bash
-        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
       - name: Install Android SDK components
         shell: bash
         run: |
