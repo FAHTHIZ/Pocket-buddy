@@ -61,8 +61,13 @@ export async function runAgent(
   if(!response.toolCalls.length)return response.content.trim()||streamed.trim()||'I could not produce a response. Please try again.';
   onEvent({type:'clear_tokens'});
   messages.push({role:'assistant',content:response.content||null,tool_calls:response.toolCalls});
-  for(const call of response.toolCalls.slice(0,4)){
+  for(let callIndex=0;callIndex<response.toolCalls.length;callIndex++){
+   const call=response.toolCalls[callIndex];
    const name=call.function.name;
+   if(callIndex>=4){
+    messages.push({role:'tool',tool_call_id:call.id,name,content:'Not executed: Pocket Buddy limits each response to four tool calls. Request the remaining work separately if it is still needed.'});
+    continue;
+   }
    let args:Record<string,unknown>={};
    try{
     const parsed=JSON.parse(call.function.arguments||'{}');
