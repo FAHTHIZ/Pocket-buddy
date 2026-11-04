@@ -21,8 +21,8 @@ export default function SettingsScreen({onBack,onSaved}:Props){
    {config.mode==='api'?<>
     <Text style={s.label}>OpenAI-compatible API base URL</Text><TextInput value={config.baseUrl} onChangeText={v=>patch({baseUrl:v})} placeholder="https://api.openai.com/v1" placeholderTextColor="#777" autoCapitalize="none" style={s.input}/>
     <Text style={s.label}>Model identifier</Text><TextInput value={config.model} onChangeText={v=>patch({model:v})} placeholder="gpt-4o-mini" placeholderTextColor="#777" style={s.input}/>
-    <Text style={s.label}>API key</Text><TextInput value={key} onChangeText={setKey} placeholder="Paste your API key" placeholderTextColor="#777" secureTextEntry style={s.input}/>
-    <Text style={s.helper}>Compatible endpoints include OpenAI-compatible gateways, Ollama's OpenAI endpoint and self-hosted inference servers. Your key is stored using Android Keystore-backed secure storage.</Text>
+    <Text style={s.label}>API key (optional for unauthenticated endpoints)</Text><TextInput value={key} onChangeText={setKey} placeholder="Paste your API key, if required" placeholderTextColor="#777" secureTextEntry style={s.input}/>
+    <Text style={s.helper}>Use an HTTPS OpenAI-compatible endpoint. Self-hosted endpoints that do not require authentication may leave the key blank. Your key, when supplied, is stored using Android Keystore-backed secure storage.</Text>
    </>:<View style={s.info}><Text style={s.infoTitle}>Local model mode</Text><Text style={s.helper}>Install a GGUF model from Models. Pocket Buddy uses llama.cpp through llama.rn. Local inference can use substantial RAM, battery and storage; performance depends on your device and the selected model.</Text></View>}
    <Text style={[s.section,{marginTop:25}]}>BUILT-IN WEB TOOLS</Text>
    <View style={s.switchRow}><View style={{flex:1}}><Text style={s.text}>Enable web search</Text><Text style={s.helper}>Adds web search and webpage reading to the agent.</Text></View><Switch value={config.useWebSearch} onValueChange={v=>patch({useWebSearch:v})} trackColor={{true:'#64748b'}}/></View>

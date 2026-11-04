@@ -43,6 +43,10 @@ function parseError(status:number,raw:string):ProviderError{
 function chatUrl(config:AppConfig):string{
  const base=config.baseUrl.trim().replace(/\/+$/,'');
  if(!base)throw new Error('Set an API base URL in Settings.');
+ let parsed:URL;
+ try{parsed=new URL(base);}catch{throw new Error('Enter a valid HTTPS API base URL in Settings.');}
+ if(parsed.protocol!=='https:'||!parsed.hostname)throw new Error('API endpoints must use HTTPS. Plain HTTP endpoints are blocked to protect prompts and credentials.');
+ if(!config.model.trim())throw new Error('Set a model identifier in Settings.');
  return base.endsWith('/chat/completions')?base:base+'/chat/completions';
 }
 
@@ -93,7 +97,9 @@ function streamRequest(url:string,key:string,body:Record<string,unknown>,onToken
 }
 
 async function jsonFallback(url:string,key:string,body:Record<string,unknown>):Promise<ModelResponse>{
- const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({...body,stream:false})});
+ const headers:Record<string,string>={'Content-Type':'application/json'};
+ if(key)headers.Authorization='Bearer '+key;
+ const response=await fetch(url,{method:'POST',headers,body:JSON.stringify({...body,stream:false})});
  const raw=await response.text();
  if(!response.ok)throw parseError(response.status,raw);
  const data=JSON.parse(raw),message=data.choices?.[0]?.message||{};
@@ -112,7 +118,6 @@ function requestBody(config:AppConfig,messages:ModelMessage[],tools:ToolDefiniti
 
 async function apiCompletion(config:AppConfig,messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{
  const key=await getProviderKey();
- if(!key)throw new Error('Add your provider API key in Settings, or switch to Local and load a GGUF model.');
  const url=chatUrl(config),body=requestBody(config,messages,tools);
  try{return await streamRequest(url,key,body,onToken);}
  catch(error){
