@@ -17,7 +17,18 @@ class McpRequestError extends Error{
   super(message);this.name='McpRequestError';this.status=status;this.payload=payload;
  }
 }
-function safeName(value:string):string{return value.replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,45);}
+function shortHash(value:string):string{
+ let hash=2166136261;
+ for(let index=0;index<value.length;index++)hash=Math.imul(hash^value.charCodeAt(index),16777619);
+ return(hash>>>0).toString(36).padStart(7,'0');
+}
+function safeName(value:string,maxLength=40):string{
+ const normalized=value.replace(/[^a-zA-Z0-9_-]/g,'_')||'tool';
+ const suffix=shortHash(value),stemLength=Math.max(1,maxLength-suffix.length-1);
+ return normalized.slice(0,stemLength)+'_'+suffix;
+}
+function serverAlias(id:string):string{return safeName(id,12);}
+function toolAlias(name:string):string{return safeName(name,40);}
 function isAscii(value:string):boolean{return /^[\x20-\x7E]*$/.test(value);}
 function utf8Base64(value:string):string{
  const bytes:number[]=[];
@@ -165,16 +176,28 @@ async function connect(server:McpServerConfig):Promise<Connection>{
   throw error;
  }
 }
+async function listAllTools(server:McpServerConfig,connection:Connection):Promise<any[]>{
+ const tools:any[]=[],seenCursors=new Set<string>();let cursor:string|undefined;
+ for(let page=0;page<20&&tools.length<200;page++){
+  const listed=await rpc(server,'tools/list',cursor?{cursor}:{},connection),result=listed.payload?.result||{};
+  if(!Array.isArray(result.tools))break;
+  tools.push(...result.tools.slice(0,200-tools.length));
+  const next=result.nextCursor;
+  if(typeof next!=='string'||!next||seenCursors.has(next))break;
+  seenCursors.add(next);cursor=next;
+ }
+ return tools;
+}
 export async function listMcpTools():Promise<ToolDefinition[]>{
  const servers=(await loadMcpServers()).filter(item=>item.enabled),definitions:ToolDefinition[]=[];
  for(const server of servers){
   try{
-   const connection=await connect(server),listed=await rpc(server,'tools/list',{},connection);
-   for(const tool of listed.payload?.result?.tools||[]){
+   const connection=await connect(server),tools=await listAllTools(server,connection);
+   for(const tool of tools){
     const name=String(tool.name||'');if(!name)continue;
     const headers=collectHeaderSpecs(tool.inputSchema);
     if(!headers.valid)continue;
-    definitions.push({type:'function',function:{name:'mcp_'+safeName(server.id)+'__'+safeName(name),description:'['+server.name+'] '+String(tool.description||name).slice(0,450),parameters:tool.inputSchema||{type:'object',properties:{}}},requiresConfirmation:true});
+    definitions.push({type:'function',function:{name:'mcp_'+serverAlias(server.id)+'__'+toolAlias(name),description:'['+server.name+'] '+String(tool.description||name).slice(0,450),parameters:tool.inputSchema||{type:'object',properties:{}}},requiresConfirmation:true});
    }
   }catch{/* Keep other connected tools available when this server is offline. */}
  }
@@ -182,10 +205,10 @@ export async function listMcpTools():Promise<ToolDefinition[]>{
 }
 export async function callMcpTool(fullName:string,args:Record<string,unknown>):Promise<string>{
  if(!fullName.startsWith('mcp_'))throw new Error('Invalid MCP tool identifier.');
- const servers=(await loadMcpServers()).filter(item=>item.enabled),server=servers.find(item=>fullName.startsWith('mcp_'+safeName(item.id)+'__'));
+ const servers=(await loadMcpServers()).filter(item=>item.enabled),server=servers.find(item=>fullName.startsWith('mcp_'+serverAlias(item.id)+'__'));
  if(!server)throw new Error('This MCP server is no longer connected.');
- const alias=fullName.slice(('mcp_'+safeName(server.id)+'__').length),connection=await connect(server);
- const listed=await rpc(server,'tools/list',{},connection),tool=(listed.payload?.result?.tools||[]).find((item:any)=>safeName(String(item.name))===alias);
+ const prefix='mcp_'+serverAlias(server.id)+'__',alias=fullName.slice(prefix.length),connection=await connect(server);
+ const tools=await listAllTools(server,connection),tool=tools.find((item:any)=>toolAlias(String(item.name))===alias);
  if(!tool)throw new Error('The MCP tool is no longer available.');
  const result=await rpc(server,'tools/call',{name:tool.name,arguments:args},connection,args,tool.inputSchema),payload=result.payload?.result;
  if(payload?.isError)throw new Error((payload.content||[]).map((item:any)=>item.text||'').join('\n')||'MCP tool failed.');
@@ -193,6 +216,6 @@ export async function callMcpTool(fullName:string,args:Record<string,unknown>):P
  return(payload?.content||[]).map((item:any)=>item.text||'['+String(item.type||'content')+' result]').join('\n').slice(0,20000)||JSON.stringify(payload||{});
 }
 export async function testMcpServer(server:McpServerConfig):Promise<string[]>{
- const connection=await connect(server),listed=await rpc(server,'tools/list',{},connection);
- return(listed.payload?.result?.tools||[]).map((tool:any)=>String(tool.name));
+ const connection=await connect(server);
+ return(await listAllTools(server,connection)).map((tool:any)=>String(tool.name));
 }
