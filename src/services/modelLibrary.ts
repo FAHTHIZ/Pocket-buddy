@@ -25,10 +25,20 @@ export async function getModelFiles(id:string):Promise<HubFile[]>{
  return(data.siblings||[]).map((item:any)=>({name:item.rfilename,size:item.lfs?.size||item.size})).filter((item:HubFile)=>item.name.toLowerCase().endsWith('.gguf'));
 }
 const wait=(ms:number):Promise<void>=>new Promise(resolve=>{setTimeout(()=>resolve(),ms);});
+function uniqueDownloadName(id:string,file:string):string{
+ const source=id+'/'+file;
+ let hash=2166136261;
+ for(let index=0;index<source.length;index++)hash=Math.imul(hash^source.charCodeAt(index),16777619);
+ const prefix=id.replace(/[^A-Za-z0-9._-]/g,'_').slice(0,48)||'model';
+ const digest=(hash>>>0).toString(16).padStart(8,'0');
+ const leaf=file.split('/').pop()||'model.gguf';
+ const maximum=Math.max(24,180-prefix.length-digest.length-2);
+ return prefix+'-'+digest+'-'+leaf.slice(-maximum);
+}
 export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
  const url='https://huggingface.co/'+id.split('/').map(encodeURIComponent).join('/')+'/resolve/main/'+file.split('/').map(encodeURIComponent).join('/');
- const result=await Native.startDownload(url,file.split('/').pop()||'model.gguf',{});
+ const result=await Native.startDownload(url,uniqueDownloadName(id,file),{});
  onId?.(result.downloadId);
  for(let attempt=0;attempt<6*60*60;attempt++){
   const state=await Native.getDownloadStatus(result.downloadId);

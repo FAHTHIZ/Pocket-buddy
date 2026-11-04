@@ -11,11 +11,18 @@ async function request(path:string,init:RequestInit={}):Promise<any>{
  const config=await loadConfig();if(!config.comfyUrl.trim())throw new Error('Connect a ComfyUI server in Settings to use media generation.');
  const token=await getComfyToken(),headers:Record<string,string>={'Content-Type':'application/json',...(init.headers as Record<string,string>||{})};
  if(token)headers.Authorization='Bearer '+token;
- const response=await fetch(config.comfyUrl.replace(/\/+$/,'')+path,{...init,headers});
- const raw=await response.text();
- if(!response.ok)throw new Error('ComfyUI returned HTTP '+response.status+': '+raw.slice(0,500));
- if(!raw.trim())return{};
- try{return JSON.parse(raw);}catch{throw new Error('ComfyUI returned an unsupported response.');}
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),60000);
+ try{
+  const response=await fetch(config.comfyUrl.replace(/\/+$/,'')+path,{...init,headers,signal:controller.signal});
+  const raw=await response.text();
+  if(!response.ok)throw new Error('ComfyUI returned HTTP '+response.status+': '+raw.slice(0,500));
+  if(!raw.trim())return{};
+  try{return JSON.parse(raw);}catch{throw new Error('ComfyUI returned an unsupported response.');}
+ }catch(error){
+  if(controller.signal.aborted)throw new Error('The ComfyUI request timed out after 60 seconds.');
+  throw error;
+ }finally{clearTimeout(timeout);}
 }
 async function submitOne(kind:'image'|'video',prompt:string):Promise<string>{
  const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:config.videoWorkflow;
@@ -44,8 +51,10 @@ export async function refreshMediaJob(promptId:string):Promise<string>{
    if(file.filename)outputs.push(JSON.stringify({filename:String(file.filename),subfolder:String(file.subfolder||''),type:String(file.type||'output')}));
   }
  }
- const failed=entry.status?.status_str==='error'||entry.status?.status_str==='failed';
- const status=failed?'failed':'complete';
+ const statusText=String(entry.status?.status_str||'').toLowerCase();
+ const failed=statusText==='error'||statusText==='failed';
+ const completed=entry.status?.completed===true||statusText==='success';
+ const status=failed?'failed':completed?'complete':'running';
  await updateGenerationJob(promptId,status,outputs);
  return status+(outputs.length?': '+outputs.length+' output file(s)':'');
 }

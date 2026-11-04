@@ -24,7 +24,8 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
             val activity = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
             val memory = ActivityManager.MemoryInfo()
             activity.getMemoryInfo(memory)
-            val storage = StatFs(context.filesDir.absolutePath)
+            val downloadDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+            val storage = StatFs(downloadDirectory?.absolutePath ?: context.filesDir.absolutePath)
             val power = context.getSystemService(Context.POWER_SERVICE) as PowerManager
             val result = Arguments.createMap()
             result.putString("manufacturer", Build.MANUFACTURER ?: "Unknown")
