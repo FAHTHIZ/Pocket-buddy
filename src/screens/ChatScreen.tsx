@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import{ActivityIndicator,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,StyleSheet,Text,TextInput,View}from'react-native';
+import{ActivityIndicator,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import Markdown from'react-native-markdown-display';
 import type{ChatMessage}from'../types';
 
