@@ -1,5 +1,5 @@
 import React,{useEffect,useState}from'react';
-import{Alert,BackHandler,Modal,Pressable,ScrollView,StatusBar,StyleSheet,Text,View}from'react-native';
+import{ActivityIndicator,Alert,BackHandler,Modal,Pressable,ScrollView,StatusBar,StyleSheet,Text,View}from'react-native';
 import{SafeAreaProvider,SafeAreaView}from'react-native-safe-area-context';
 import AsyncStorage from'@react-native-async-storage/async-storage';
 import ChatScreen from'./screens/ChatScreen';
@@ -20,7 +20,7 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
- const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState('');
+ const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false);
 
  useEffect(()=>{
   let mounted=true;
@@ -37,6 +37,7 @@ function BuddyApp(){
     }else if(savedConfig.mode==='api'){setModelName(savedConfig.model||'API model');}
     if(stored.length){const recent=stored[0];setActiveId(recent.id);setMessages(recent.messages);}
    }catch(error){if(mounted)setBootError(error instanceof Error?error.message:String(error));}
+   finally{if(mounted)setReady(true);}
   })();
   return()=>{mounted=false;releaseLocalModel().catch(()=>{});};
  },[]);
@@ -100,6 +101,7 @@ function BuddyApp(){
  };
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
+  {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
   {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
@@ -124,6 +126,7 @@ function BuddyApp(){
    </View>
   </Modal>
   {bootError? <View style={s.toast}><Text style={s.toastText} numberOfLines={2}>{bootError}</Text><Pressable onPress={()=>setBootError('')}><Text style={s.toastClose}>×</Text></Pressable></View>:null}
+  </>}
  </SafeAreaView>;
 }
 function MenuItem({label,icon,onPress}:{label:string;icon:string;onPress:()=>void}){
@@ -131,7 +134,7 @@ function MenuItem({label,icon,onPress}:{label:string;icon:string;onPress:()=>voi
 }
 export default function App(){return <SafeAreaProvider><BuddyApp/></SafeAreaProvider>;}
 const s=StyleSheet.create({
- safe:{flex:1,backgroundColor:C.bg},menuShade:{flex:1,flexDirection:'row',backgroundColor:'#0009'},
+ safe:{flex:1,backgroundColor:C.bg},boot:{flex:1,alignItems:'center',justifyContent:'center',gap:12},bootLogo:{width:64,height:64,borderRadius:32,backgroundColor:'#28282f',alignItems:'center',justifyContent:'center'},bootGlyph:{color:'#f4f4f5',fontSize:38},bootTitle:{color:C.text,fontSize:20,fontWeight:'800'},bootHint:{color:C.muted,fontSize:12},menuShade:{flex:1,flexDirection:'row',backgroundColor:'#0009'},
  drawer:{width:'84%',maxWidth:350,backgroundColor:'#17171b',paddingTop:17,paddingHorizontal:15,paddingBottom:13,borderRightWidth:1,borderRightColor:C.line},
  drawerTop:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:18},drawerBrand:{color:C.text,fontSize:19,fontWeight:'800'},
  newIcon:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},newIconText:{color:C.text,fontSize:22,marginTop:-2},
