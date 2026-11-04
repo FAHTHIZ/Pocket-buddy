@@ -8,7 +8,8 @@ This is the selected stack and extension inventory. Versions and licenses must b
 | Native language runtime | llama.cpp | MIT; GGUF model inference |
 | React Native bridge | llama.rn | MIT; Android/iOS bridge to llama.cpp |
 | API provider | OpenAI-compatible Chat Completions | Protocol; use provider's actual API terms |
-| Database | react-native-sqlite-storage / SQLite | MIT wrapper / public-domain SQLite |
+| Database | react-native-nitro-sqlite / SQLite | MIT; async SQLite queries and transactions |
+| Native modules bridge | react-native-nitro-modules | MIT; native JSI/Nitro module bridge |
 | Secure credentials | react-native-keychain | MIT; Android Keystore-backed credential storage |
 | Web search | SearXNG | AGPL-3.0-or-later; operate as a separate service |
 | Agent protocol | MCP | Protocol specification; SDK package licenses vary |
@@ -39,6 +40,8 @@ This is the selected stack and extension inventory. Versions and licenses must b
 - React Native: https://reactnative.dev/
 - Android thermal APIs: https://developer.android.com/reference/android/os/PowerManager
 - Android DownloadManager: https://developer.android.com/reference/android/app/DownloadManager
+- Nitro SQLite docs: https://sqlite.margelo.com/docs
+- Nitro SQLite repository: https://github.com/margelo/react-native-nitro-sqlite
 - ComfyUI server API: https://docs.comfy.org/development/comfyui-server/comms_routes
 - ComfyUI API examples: https://docs.comfy.org/development/comfyui-server/api-examples
 - SearXNG Search API: https://docs.searxng.org/dev/search_api.html

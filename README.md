@@ -4,7 +4,7 @@
 
 Pocket Buddy is an Android-first personal AI workspace. Its default experience is a familiar chat session, while the application independently manages local GGUF models, OpenAI-compatible providers, an agent/tool loop, MCP connectors and media-generation workflows.
 
-> Development status: The core Android application and primary interaction paths are in the repository. TypeScript validation and the Android debug APK build have passed in GitHub Actions. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation. The debug APK is not a signed release APK.
+> Development status: Core app sources are in the repository. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation. Android build validation is being run in GitHub Actions; use the latest workflow artifact for the debug APK only after the run succeeds.
 
 ## Product principles
 
@@ -24,7 +24,7 @@ Pocket Buddy is an Android-first personal AI workspace. Its default experience i
 | Local text models | llama.rn 0.13.0-rc.9, llama.cpp, GGUF |
 | Remote models | OpenAI-compatible Chat Completions, SSE streaming and JSON fallback |
 | Model discovery | Hugging Face Hub API, GGUF file listing and Android DownloadManager |
-| Local storage | SQLite conversations, messages and generation jobs |
+| Local storage | Nitro SQLite 10.2.0, async queries and transactions |
 | Secrets | react-native-keychain (Android Keystore-backed) |
 | Agent | Bounded multi-turn tool loop and direct media intent routing |
 | Web | User-configured SearXNG; public HTTPS webpage reader |
@@ -65,7 +65,7 @@ The debug APK is written to:
 
 This repository invokes a system Gradle installation directly and does not commit a generated Gradle wrapper JAR. Install Gradle 9.4.1 and ensure the gradle command is on PATH.
 
-The llama.rn package downloads its native Android binaries during package installation. If that postinstall step fails, inspect the error and follow the package's native artifact download instructions before building.
+The llama.rn and Nitro SQLite packages include native Android code, so rebuild the Android app after installing or upgrading dependencies.
 
 ## First-run configuration
 
@@ -97,7 +97,7 @@ The agent caps tool rounds and the number of calls per round. Tool results and r
 
 A text-only LLM does not need native image/video generation. Pocket Buddy's application layer can directly route explicit generation requests and submit them to ComfyUI. The configured API workflow, model weights, custom nodes, compute capacity and provider limits determine what can actually be generated.
 
-For local image generation, stable-diffusion.cpp is the leading candidate, but automatic local diffusion is not enabled as a general promise until device/backend combinations pass Android benchmarks. Video generation is normally remote because current video models are too demanding for most phones.
+For local image generation, stable-diffusion.cpp is a candidate for qualified devices, but automatic local diffusion is not enabled as a general promise until device/backend combinations pass Android benchmarks. Video generation is normally remote because current video models are too demanding for most phones.
 
 ## Known limitations before production release
 
