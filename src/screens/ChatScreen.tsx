@@ -39,7 +39,7 @@ export default function ChatScreen(p:Props){
        {item.error&&<Text style={s.error}>This response may be incomplete. You can retry your request.</Text>}
       </View>
      </View>}
-    ListFooterComponent={p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:null}
+    ListFooterComponent={p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
    />}
   <View style={s.composerWrap}>
    <View style={s.modelStrip}>

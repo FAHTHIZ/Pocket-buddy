@@ -24,7 +24,7 @@ export async function getModelFiles(id:string):Promise<HubFile[]>{
  const data=await response.json();
  return(data.siblings||[]).map((item:any)=>({name:item.rfilename,size:item.lfs?.size||item.size})).filter((item:HubFile)=>item.name.toLowerCase().endsWith('.gguf'));
 }
-const wait=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+const wait=(ms:number):Promise<void>=>new Promise(resolve=>{setTimeout(()=>resolve(),ms);});
 export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
  const url='https://huggingface.co/'+id.split('/').map(encodeURIComponent).join('/')+'/resolve/main/'+file.split('/').map(encodeURIComponent).join('/');

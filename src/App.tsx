@@ -99,7 +99,7 @@ function BuddyApp(){
   setScreen('chat');
  };
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
-  <StatusBar barStyle="light-content" backgroundColor={C.bg}/>
+  <StatusBar barStyle="light-content"/>
   {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
