@@ -16,7 +16,7 @@ def releaseSigning = [
     keyAlias: project.findProperty("POCKET_BUDDY_RELEASE_KEY_ALIAS"),
     keyPassword: project.findProperty("POCKET_BUDDY_RELEASE_KEY_PASSWORD")
 ]
-def releaseSigningConfigured = releaseSigning.values().every {
+def useDebugSigningForTestRelease = project.findProperty("pocketBuddyUseDebugSigning") == "true"\ndef releaseSigningConfigured = releaseSigning.values().every {
     it != null && !it.toString().trim().isEmpty()
 }
 
@@ -57,6 +57,9 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
             if (releaseSigningConfigured) {
                 signingConfig signingConfigs.release
+            } else if (useDebugSigningForTestRelease) {
+                // CI-only test signing. Production releases must use a private release keystore.
+                signingConfig signingConfigs.debug
             }
         }
     }
