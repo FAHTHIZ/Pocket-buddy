@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pocket-buddy-android-${{ github.ref }}
@@ -47,9 +47,30 @@ jobs:
         with:
           gradle-version: '9.4.1'
       - name: Install JavaScript dependencies
-        run: npm install --no-audit --no-fund
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
       - name: Generate pinned Gradle wrapper
         run: gradle -p android wrapper --gradle-version 9.4.1 --distribution-type bin
+      - name: Commit reproducible build inputs to main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          git add package-lock.json android/gradlew android/gradlew.bat android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/gradle-wrapper.properties
+          if git diff --cached --quiet; then
+            echo "Build inputs are already committed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build: commit npm lockfile and Gradle wrapper"
+          if ! git push origin HEAD:main; then
+            echo "::warning::Could not push generated build inputs. They remain available in the validation artifact."
+          fi
       - name: TypeScript validation
         id: typecheck
         shell: bash
