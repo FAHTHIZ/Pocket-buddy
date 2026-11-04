@@ -1,0 +1,39 @@
+{
+  "name":"pocket-buddy",
+  "version":"0.1.0",
+  "private":true,
+  "description":"A personal AI workspace for local models, API providers, agent tools, MCP connectors and media generation.",
+  "scripts":{
+    "android":"react-native run-android",
+    "build:android":"gradle -p android assembleDebug",
+    "build:android:release":"gradle -p android assembleRelease",
+    "start":"react-native start",
+    "typecheck":"tsc --noEmit"
+  },
+  "engines":{"node":">=22.13.0"},
+  "dependencies":{
+    "@react-native-async-storage/async-storage":"^2.2.0",
+    "llama.rn":"0.13.0-rc.9",
+    "react":"19.2.3",
+    "react-native":"0.87.1",
+    "react-native-gesture-handler":"^2.33.1",
+    "react-native-keychain":"^10.0.0",
+    "react-native-markdown-display":"^7.0.2",
+    "react-native-safe-area-context":"^5.10.1",
+    "react-native-sqlite-storage":"^6.0.1",
+    "react-native-url-polyfill":"^3.0.0",
+    "react-native-worklets":"0.13.0"
+  },
+  "devDependencies":{
+    "@babel/core":"^7.25.2",
+    "@babel/preset-env":"^7.25.3",
+    "@react-native-community/cli":"20.2.0",
+    "@react-native-community/cli-platform-android":"20.2.0",
+    "@react-native/babel-preset":"0.87.1",
+    "@react-native/metro-config":"0.87.1",
+    "@react-native/typescript-config":"0.87.1",
+    "@types/react":"^19.2.0",
+    "@types/react-native-sqlite-storage":"^6.0.5",
+    "typescript":"5.9.3"
+  }
+}

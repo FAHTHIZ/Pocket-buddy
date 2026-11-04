@@ -1,0 +1,2 @@
+-keep class com.rnllama.** { *; }
+-keepclasseswithmembers class * { native <methods>; }

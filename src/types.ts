@@ -1,0 +1,15 @@
+export type ProviderMode='api'|'local';
+export type ChatRole='system'|'user'|'assistant'|'tool';
+export type ChatMessage={id:string;role:'user'|'assistant';content:string;createdAt:number;error?:boolean;attachments?:MessageAttachment[]};
+export type MessageAttachment={id:string;name:string;uri:string;mimeType:string;size?:number};
+export type ToolCall={id:string;type:'function';function:{name:string;arguments:string}};
+export type ModelMessage={role:ChatRole;content:string|null;name?:string;tool_call_id?:string;tool_calls?:ToolCall[]};
+export type ToolDefinition={type:'function';function:{name:string;description:string;parameters:Record<string,unknown>};requiresConfirmation?:boolean};
+export type ModelResponse={content:string;toolCalls:ToolCall[]};
+export type AppConfig={mode:ProviderMode;baseUrl:string;model:string;temperature:number;maxToolTurns:number;useWebSearch:boolean;searxngUrl:string;comfyUrl:string;imageWorkflow:string;videoWorkflow:string};
+export type Conversation={id:string;title:string;updatedAt:number;messages:ChatMessage[]};
+export type McpServerConfig={id:string;name:string;url:string;enabled:boolean};
+export type DeviceProfile={manufacturer:string;model:string;soc:string;sdk:number;totalRamMb:number;availableRamMb:number;availableStorageMb:number;memoryClassMb:number;thermalStatus:number};
+export type GenerationJob={id:string;kind:'image'|'video';prompt:string;promptId:string;status:string;createdAt:number;outputs:string[]};
+export type AgentEvent={type:'token';token:string}|{type:'clear_tokens'}|{type:'status';message:string}|{type:'tool_start';name:string;id:string}|{type:'tool_result';name:string;id:string;result:string};
+export type NativeDownloadStatus={status:'queued'|'running'|'paused'|'complete'|'failed';progress:number;localPath?:string;reason?:number};

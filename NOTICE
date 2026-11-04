@@ -1,0 +1,14 @@
+Pocket Buddy
+
+Pocket Buddy's own original source code and documentation are licensed under Apache License 2.0.
+
+Third-party components are not relicensed by this notice. Their notices and original licenses remain applicable. In particular:
+- React Native and llama.rn are MIT-licensed.
+- llama.cpp is MIT-licensed.
+- react-native-keychain is MIT-licensed.
+- SQLite is public domain; the React Native binding has its own license.
+- ComfyUI is GPL-3.0 and is expected to run as a separate server, not bundled into the mobile application.
+- SearXNG is AGPL-3.0-or-later and is expected to run as a separate search service.
+- Model weights, datasets, workflows, custom nodes, LoRAs and generated assets have independent licenses and terms. Verify those terms before redistribution.
+
+The dependency inventory is documented in docs/TOOLING.md.
