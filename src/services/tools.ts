@@ -18,13 +18,17 @@ function calculate(source:string):number{
 function publicHttpsUrl(raw:string):URL{
  let url:URL;try{url=new URL(raw);}catch{throw new Error('Enter a valid URL.');}
  if(url.protocol!=='https:')throw new Error('Only HTTPS webpage URLs are supported.');
- const host=url.hostname.toLowerCase();
- if(host==='localhost'||host.endsWith('.localhost')||host.endsWith('.local')||host==='127.0.0.1'||host==='::1'||host==='0.0.0.0'||/^10\./.test(host)||/^192\.168\./.test(host)||/^169\.254\./.test(host)||/^172\.(1[6-9]|2\d|3[01])\./.test(host))throw new Error('Private network addresses are not supported by the webpage reader.');
+ if(url.username||url.password)throw new Error('URLs containing embedded credentials are not supported.');
+ const host=url.hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/,'');
+ const localSuffixes=['.localhost','.local','.internal','.lan','.test','.home.arpa'];
+ if(!host.includes('.')||host.includes(':')||/^\d+(?:\.\d+){0,3}$/.test(host)||host==='localhost'||localSuffixes.some(suffix=>host.endsWith(suffix)))throw new Error('Local, private and IP-literal destinations are not supported by the webpage reader.');
  return url;
 }
 async function webSearch(query:string):Promise<string>{
  const config=await loadConfig();if(!config.searxngUrl.trim())throw new Error('Connect a SearXNG search instance in Settings to enable web search.');
- const response=await fetch(config.searxngUrl.replace(/\/+$/,'')+'/search?q='+encodeURIComponent(query)+'&format=json',{headers:{Accept:'application/json'}});
+ let endpoint:URL;try{endpoint=new URL(config.searxngUrl.trim());}catch{throw new Error('Enter a valid SearXNG HTTPS URL in Settings.');}
+ if(endpoint.protocol!=='https:'||!endpoint.hostname||endpoint.username||endpoint.password)throw new Error('SearXNG endpoints must use HTTPS and must not contain embedded credentials.');
+ const response=await fetch(endpoint.toString().replace(/\/+$/,'')+'/search?q='+encodeURIComponent(query)+'&format=json',{headers:{Accept:'application/json'}});
  if(!response.ok)throw new Error('Search service returned HTTP '+response.status);
  const data=await response.json();
  return (data.results||[]).slice(0,8).map((item:any,index)=>(index+1)+'. '+String(item.title||'Untitled')+'\n'+String(item.url||'')+'\n'+String(item.content||'').slice(0,600)).join('\n\n')||'No results found.';
@@ -43,11 +47,11 @@ const definitions:ToolDefinition[]=[
  {type:'function',function:{name:'current_time',description:'Get the current date, time and timezone of this device.',parameters:{type:'object',properties:{}}}},
  {type:'function',function:{name:'web_search',description:'Search the web using the connected SearXNG instance. Use for recent facts, research and sources.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}},
  {type:'function',function:{name:'read_webpage',description:'Read and extract text from a public HTTPS webpage. Pocket Buddy will ask the user to approve the URL before fetching it.',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}},requiresConfirmation:true},
- {type:'function',function:{name:'generate_image',description:'Generate one image through Pocket Buddy’s application-level media engine. Independent of the selected chat model.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}}},
- {type:'function',function:{name:'generate_images',description:'Queue 1 to 20 images through the media engine. The selected chat model does not need native image generation.',parameters:{type:'object',properties:{prompt:{type:'string'},count:{type:'integer',minimum:1,maximum:20}},required:['prompt','count']}}},
- {type:'function',function:{name:'generate_video',description:'Generate a video through the configured media workflow. The selected chat model does not need native video generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}}},
+ {type:'function',function:{name:'generate_image',description:'Generate one image through Pocket Buddy’s application-level media engine. Independent of the selected chat model.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_images',description:'Queue 1 to 20 images through the media engine. The selected chat model does not need native image generation.',parameters:{type:'object',properties:{prompt:{type:'string'},count:{type:'integer',minimum:1,maximum:20}},required:['prompt','count']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_video',description:'Generate a video through the configured media workflow. The selected chat model does not need native video generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
  {type:'function',function:{name:'generation_status',description:'Check the status and output filenames for a ComfyUI generation job.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}}},
- {type:'function',function:{name:'cancel_generation',description:'Cancel a pending ComfyUI generation job.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}}},
+ {type:'function',function:{name:'cancel_generation',description:'Cancel a pending ComfyUI generation job. Requires confirmation and only works before execution begins.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}},requiresConfirmation:true},
 ];
 export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
  const config=await loadConfig();
