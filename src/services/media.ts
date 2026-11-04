@@ -9,12 +9,14 @@ function replacePrompt(value:any,prompt:string):any{
 }
 async function request(path:string,init:RequestInit={}):Promise<any>{
  const config=await loadConfig();if(!config.comfyUrl.trim())throw new Error('Connect a ComfyUI server in Settings to use media generation.');
+ let endpoint:URL;try{endpoint=new URL(config.comfyUrl.trim());}catch{throw new Error('Enter a valid ComfyUI HTTPS URL in Settings.');}
+ if(endpoint.protocol!=='https:'||!endpoint.hostname||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)throw new Error('ComfyUI endpoints must use HTTPS and must not contain embedded credentials, query strings or fragments.');
  const token=await getComfyToken(),headers:Record<string,string>={'Content-Type':'application/json',...(init.headers as Record<string,string>||{})};
  if(token)headers.Authorization='Bearer '+token;
  const controller=new AbortController();
  const timeout=setTimeout(()=>controller.abort(),60000);
  try{
-  const response=await fetch(config.comfyUrl.replace(/\/+$/,'')+path,{...init,headers,signal:controller.signal});
+  const response=await fetch(endpoint.toString().replace(/\/+$/,'')+path,{...init,headers,signal:controller.signal});
   const raw=await response.text();
   if(!response.ok)throw new Error('ComfyUI returned HTTP '+response.status+': '+raw.slice(0,500));
   if(!raw.trim())return{};
@@ -60,6 +62,10 @@ export async function refreshMediaJob(promptId:string):Promise<string>{
 }
 export async function readMediaJobs():Promise<GenerationJob[]>{return listGenerationJobs();}
 export async function cancelMediaJob(promptId:string):Promise<void>{
+ const job=(await listGenerationJobs()).find(item=>item.promptId===promptId);
+ if(!job)throw new Error('That generation job is not in this Pocket Buddy media library.');
+ const status=await refreshMediaJob(promptId);
+ if(!status.startsWith('queued'))throw new Error('Only jobs that are still waiting in the ComfyUI queue can be cancelled safely.');
  await request('/queue',{method:'POST',body:JSON.stringify({delete:[promptId]})});
  await updateGenerationJob(promptId,'cancelled');
 }
