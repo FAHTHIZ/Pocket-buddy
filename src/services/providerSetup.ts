@@ -108,9 +108,12 @@ export async function discoverAndTestProvider(
 
   const candidates = requested ? [requested] : discovered.slice(0, 8);
   if (candidates.length === 0) {
+    if (modelsResult.response.status === 401 || modelsResult.response.status === 403) {
+      throw new Error('The provider rejected this API key (HTTP ' + modelsResult.response.status + '). Check the key and its model access.');
+    }
     if (!modelsResult.response.ok) {
       throw new Error(
-        'The provider URL is reachable only if its models endpoint is enabled. Enter the model ID supplied by your provider in the optional Model field, then connect again.'
+        'The provider did not expose a usable model list (HTTP ' + modelsResult.response.status + '). Enter the exact chat model ID in the optional Model ID field, then connect again.'
       );
     }
     throw new Error('No chat models were found. Enter the exact model ID supplied by your provider.');
