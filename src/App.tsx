@@ -39,12 +39,12 @@ function BuddyApp(){
     setConfig(savedConfig);
     const localReady=savedConfig.mode==='local'&&!!localUri;
     const apiReady=savedConfig.mode==='api'&&!!savedConfig.baseUrl&&!!savedConfig.model&&(setupMarker==='true'||!!providerKey);
-    setSetupComplete(localReady||apiReady);
+    setSetupComplete(apiReady);
     if(savedConfig.mode==='local'&&localUri){
      setModelName(activeModel||'Loading local model…');
      setReady(true);
      void loadLocalModel(localUri).then(()=>{
-      if(mounted)setModelName(activeModel||'Local model');
+      if(mounted){setModelName(activeModel||'Local model');setSetupComplete(true);}
      }).catch(error=>{
       if(mounted){
        setModelName('Local model unavailable');
