@@ -16,7 +16,8 @@ def releaseSigning = [
     keyAlias: project.findProperty("POCKET_BUDDY_RELEASE_KEY_ALIAS"),
     keyPassword: project.findProperty("POCKET_BUDDY_RELEASE_KEY_PASSWORD")
 ]
-def useDebugSigningForTestRelease = project.findProperty("pocketBuddyUseDebugSigning") == "true"\ndef releaseSigningConfigured = releaseSigning.values().every {
+def useDebugSigningForTestRelease = project.findProperty("pocketBuddyUseDebugSigning") == "true"
+def releaseSigningConfigured = releaseSigning.values().every {
     it != null && !it.toString().trim().isEmpty()
 }
 
