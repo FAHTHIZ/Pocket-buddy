@@ -20,13 +20,11 @@ function normalizeProviderBase(value: string): string {
     throw new Error('Do not put API keys or other credentials inside the URL. Paste the key in the API key field.');
   }
 
-  let path = parsed.pathname.replace(/\/+$/, '');
-  path = path.replace(/\/(?:chat\/completions|models)$/i, '');
-  if (!path || path === '/') path = '/v1';
-  parsed.pathname = path;
-  parsed.search = '';
-  parsed.hash = '';
-  return parsed.toString().replace(/\/+$/, '');
+  const cleanPath = parsed.pathname
+    .replace(/\/+$/, '')
+    .replace(/\/(?:chat\/completions|models)$/i, '');
+  const path = !cleanPath || cleanPath === '/' ? '/v1' : cleanPath;
+  return parsed.origin + path;
 }
 
 async function requestJson(url: string, init: RequestInit = {}): Promise<JsonResult> {
