@@ -8,6 +8,7 @@ type Props={
  messages:ChatMessage[];onSend:(text:string)=>void;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'models'|'connectors'|'gallery')=>void;
+ onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
 };
 export default function ChatScreen(p:Props){
  const[draft,setDraft]=useState(''),[actions,setActions]=useState(false);
@@ -20,6 +21,7 @@ export default function ChatScreen(p:Props){
   <View style={s.topbar}>
    <Pressable style={s.menuButton} onPress={p.onMenu}><Text style={s.menuIcon}>☰</Text></Pressable>
    <Text style={s.brand}>Pocket Buddy</Text>
+   {p.speechActive?<Pressable style={s.stopSpeech} onPress={p.onStopSpeech}><Text style={s.stopSpeechText}>Stop voice</Text></Pressable>:null}
    <Pressable style={s.topAction} onPress={p.onModels}><Text style={s.topActionText}>＋</Text></Pressable>
   </View>
   {empty?<View style={s.welcome}>
@@ -37,6 +39,7 @@ export default function ChatScreen(p:Props){
       <View style={[s.bubble,item.role==='user'?s.userBubble:s.assistantBubble]}>
        <Markdown style={markdown} onLinkPress={url=>{Linking.openURL(url).catch(()=>{});return false;}}>{item.content}</Markdown>
        {item.error&&<Text style={s.error}>This response may be incomplete. You can retry your request.</Text>}
+       {item.role==='assistant'?<Pressable style={s.speechButton} onPress={()=>p.onSpeak(item.content)}><Text style={s.speechButtonText}>◖  Read aloud</Text></Pressable>:null}
       </View>
      </View>}
     ListFooterComponent={p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
@@ -103,6 +106,8 @@ const s=StyleSheet.create({
  liveRow:{flexDirection:'row',gap:9,alignItems:'flex-start',paddingVertical:8},liveBubble:{flex:1,paddingRight:6},
  thinking:{paddingLeft:36,flexDirection:'row',alignItems:'center',gap:9,paddingVertical:10},thinkingText:{color:C.muted,fontSize:12},
  error:{color:'#f0a0a0',fontSize:11,marginTop:6},
+ speechButton:{alignSelf:'flex-start',marginTop:5,paddingVertical:5,paddingHorizontal:9,borderRadius:14,backgroundColor:'#25252b'},speechButtonText:{color:'#c7d3eb',fontSize:10,fontWeight:'700'},
+ stopSpeech:{backgroundColor:'#3a2929',borderRadius:14,paddingHorizontal:10,paddingVertical:6},stopSpeechText:{color:'#f0c2c2',fontSize:10,fontWeight:'700'},
  composerWrap:{paddingHorizontal:12,paddingTop:7,paddingBottom:8,backgroundColor:C.bg},
  modelStrip:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8,marginLeft:2},
  modelPill:{flexDirection:'row',alignItems:'center',gap:7,maxWidth:220,backgroundColor:'#242429',borderRadius:20,paddingHorizontal:12,paddingVertical:8},

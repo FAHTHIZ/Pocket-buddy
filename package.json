@@ -4,9 +4,9 @@
   "private":true,
   "description":"A personal AI workspace for local models, API providers, agent tools, MCP connectors and media generation.",
   "scripts":{
-    "android":"gradle -p android installDebug",
-    "build:android":"gradle -p android assembleDebug",
-    "build:android:release":"gradle -p android assembleRelease",
+    "android":"react-native run-android",
+    "build:android":"bash android/gradlew -p android assembleDebug",
+    "build:android:release":"bash android/gradlew -p android assembleRelease",
     "start":"react-native start",
     "typecheck":"tsc --noEmit"
   },

@@ -41,7 +41,7 @@ Requirements:
 - JDK 17+
 - Android SDK platform 37 preview / build tools 37.0.0
 - Android NDK 27.3.13750724
-- Gradle 9.4.1 installed on PATH
+- The pinned Gradle wrapper at `android/gradlew` (committed to the repository)
 
 Install dependencies:
 
@@ -63,7 +63,7 @@ The debug APK is written to:
 
     android/app/build/outputs/apk/debug/app-debug.apk
 
-This repository invokes a system Gradle installation directly and does not commit a generated Gradle wrapper JAR. Install Gradle 9.4.1 and ensure the gradle command is on PATH.
+The repository uses the pinned Gradle wrapper at `android/gradlew`; a system-wide Gradle installation is not required.
 
 The llama.rn and Nitro SQLite packages include native Android code, so rebuild the Android app after installing or upgrading dependencies.
 
@@ -108,18 +108,30 @@ Keep the keystore and passwords private, backed up securely, and out of Git. Wit
 
 The agent caps tool rounds and the number of calls per round. Tool results and retrieved content are untrusted data.
 
+## One-link Android install
+
+The latest ARM64 test APK is published at this stable address after the Android validation workflow succeeds:
+
+**[Download Pocket Buddy for Android](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
+
+Android will ask you to confirm installation of an APK downloaded outside the Play Store. This is a debug-signed test build, not a production Play Store release. The link becomes available after the first successful release workflow.
+
 ## Media generation
 
 A text-only LLM does not need native image/video generation. Pocket Buddy's application layer can directly route explicit generation requests and submit them to ComfyUI. The configured API workflow, model weights, custom nodes, compute capacity and provider limits determine what can actually be generated.
 
 For local image generation, stable-diffusion.cpp is a candidate for qualified devices, but automatic local diffusion is not enabled as a general promise until device/backend combinations pass Android benchmarks. Video generation is normally remote because current video models are too demanding for most phones.
 
+## Voice output
+
+Assistant messages have a **Read aloud** control. It uses the best matching voice installed on Android by default. To use neural speech, save an ElevenLabs API key and Voice ID in Settings. Only text you explicitly choose to read aloud is sent to that provider; usage credits may apply. See the [official Text-to-Speech API reference](https://elevenlabs.io/docs/api-reference/text-to-speech/convert).
+
 ## Known limitations before production release
 
 - Real-device installation and inference validation is still required.
 - Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
 - Model downloads use Android DownloadManager, but recovery after process death and file-integrity verification need device testing.
-- ComfyUI jobs are persisted and can be checked; WebSocket live progress, local output copying, rich previews and robust job recovery remain release tasks.
+- ComfyUI jobs are persisted and can be checked. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
 - Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.

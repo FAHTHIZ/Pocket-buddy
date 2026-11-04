@@ -11,6 +11,7 @@ import{runAgent,type ConfirmTool}from'./services/agent';
 import{listConversations,saveConversation}from'./services/database';
 import{loadConfig,saveConfig}from'./services/storage';
 import{loadLocalModel,releaseLocalModel}from'./services/llm';
+import{readAloud,stopSpeech}from'./services/speech';
 import type{AppConfig,ChatMessage,Conversation}from'./types';
 
 type Screen='chat'|'connectors'|'models'|'settings'|'media';
@@ -20,7 +21,7 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
- const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false);
+ const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false);
 
  useEffect(()=>{
   let mounted=true;
@@ -83,6 +84,8 @@ function BuddyApp(){
    try{await saveCurrent(id,complete,title);}catch{}
   }finally{setBusy(false);setStatus('');}
  };
+ const playMessage=async(content:string)=>{try{setSpeechActive(true);await readAloud(content);}catch(error){Alert.alert('Voice playback unavailable',error instanceof Error?error.message:String(error));}finally{setSpeechActive(false);}};
+ const stopVoice=async()=>{try{await stopSpeech();}catch{}finally{setSpeechActive(false);}};
  const newChat=()=>{if(busy)return;setActiveId('');setMessages([]);setLiveText('');setScreen('chat');setMenuOpen(false);};
  const openScreen=(value:Screen)=>{setScreen(value);setMenuOpen(false);};
  const chooseChat=(item:Conversation)=>{if(busy)return;setActiveId(item.id);setMessages(item.messages);setLiveText('');setScreen('chat');setMenuOpen(false);};
@@ -102,7 +105,7 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
