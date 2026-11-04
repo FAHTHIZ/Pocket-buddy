@@ -31,10 +31,10 @@ jobs:
         run: |
           set +o pipefail
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null
-      - name: Install Android SDK components
+      - name: Install Android 17 preview SDK components
         shell: bash
         run: |
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=3 \
             "platform-tools" \
             "platforms;android-37" \
             "build-tools;37.0.0" \
