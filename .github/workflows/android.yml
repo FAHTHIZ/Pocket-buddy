@@ -52,12 +52,12 @@ jobs:
           npm run typecheck -- --pretty false > typecheck.log 2>&1
           code=$?
           cat typecheck.log
+          echo "$code" > typecheck.exit
           if [ "$code" -ne 0 ]; then
             while IFS= read -r line; do
               [ -n "$line" ] && echo "::error title=TypeScript validation::$line"
             done < typecheck.log
           fi
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Build Android debug APK
         id: android
@@ -67,31 +67,32 @@ jobs:
           gradle -p android assembleDebug --stacktrace > android-build.log 2>&1
           code=$?
           tail -n 160 android-build.log
+          echo "$code" > android-build.exit
           if [ "$code" -ne 0 ]; then
-            echo "::error title=Android build::Gradle assembleDebug failed. See android-build.log artifact for details."
+            echo "::error title=Android build::Gradle assembleDebug failed. See android-build.log in the validation artifact."
           fi
-          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Upload build diagnostics and APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pocket-buddy-validation-\${{ github.run_number }}
+          name: pocket-buddy-validation
           path: |
             typecheck.log
+            typecheck.exit
             android-build.log
+            android-build.exit
             android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: warn
           retention-days: 14
       - name: Enforce validation results
         if: always()
         shell: bash
-        env:
-          TYPECHECK_EXIT_CODE: \${{ steps.typecheck.outputs.exit_code }}
-          ANDROID_EXIT_CODE: \${{ steps.android.outputs.exit_code }}
         run: |
-          if [ "$TYPECHECK_EXIT_CODE" != "0" ] || [ "$ANDROID_EXIT_CODE" != "0" ]; then
-            echo "TypeScript exit: \${TYPECHECK_EXIT_CODE:-not run}"
-            echo "Android build exit: \${ANDROID_EXIT_CODE:-not run}"
+          typecheck_code=$(cat typecheck.exit 2>/dev/null || echo missing)
+          android_code=$(cat android-build.exit 2>/dev/null || echo missing)
+          echo "TypeScript validation: $typecheck_code"
+          echo "Android build: $android_code"
+          if [ "$typecheck_code" != "0" ] || [ "$android_code" != "0" ]; then
             exit 1
           fi

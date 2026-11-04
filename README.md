@@ -4,7 +4,7 @@
 
 Pocket Buddy is an Android-first personal AI workspace. Its default experience is a familiar chat session, while the application independently manages local GGUF models, OpenAI-compatible providers, an agent/tool loop, MCP connectors and media-generation workflows.
 
-> Development status: Core Android application sources and primary interaction paths are in the repository. This is not yet a certified production release: the Android build, real-device inference, provider compatibility, MCP interoperability and configured media workflows still need to pass device-level validation. No APK is advertised as tested until CI actually produces one.
+> Development status: The core Android application and primary interaction paths are in the repository. TypeScript validation and the Android debug APK build have passed in GitHub Actions. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation. The debug APK is not a signed release APK.
 
 ## Product principles
 
@@ -36,18 +36,18 @@ Pocket Buddy is an Android-first personal AI workspace. Its default experience i
 ## Setup
 
 Requirements:
-- Node.js 22+
-- Yarn 1.22 or npm
+- Node.js 22.13+
+- npm or Yarn 1.22
 - JDK 17+
-- Android SDK platform 37 / build tools 37.0.0
+- Android SDK platform 37 preview / build tools 37.0.0
 - Android NDK 27.3.13750724
-- Gradle 9.4.1
+- Gradle 9.4.1 installed on PATH
 
 Install dependencies:
 
     npm install
 
-Start Metro:
+Start Metro in one terminal:
 
     npm start
 
@@ -55,13 +55,15 @@ In another terminal, attach an Android device with USB debugging enabled:
 
     npm run android
 
-Build on a machine with Gradle installed:
+Build a debug APK:
 
-    gradle -p android assembleDebug
+    npm run build:android
 
 The debug APK is written to:
 
     android/app/build/outputs/apk/debug/app-debug.apk
+
+This repository invokes a system Gradle installation directly and does not commit a generated Gradle wrapper JAR. Install Gradle 9.4.1 and ensure the gradle command is on PATH.
 
 The llama.rn package downloads its native Android binaries during package installation. If that postinstall step fails, inspect the error and follow the package's native artifact download instructions before building.
 
@@ -99,7 +101,7 @@ For local image generation, stable-diffusion.cpp is the leading candidate, but a
 
 ## Known limitations before production release
 
-- Android build and installation validation on real devices is required.
+- Real-device installation and inference validation is still required.
 - Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
 - Model downloads use Android DownloadManager, but recovery after process death and file-integrity verification need device testing.
 - ComfyUI jobs are persisted and can be checked; WebSocket live progress, local output copying, rich previews and robust job recovery remain release tasks.
