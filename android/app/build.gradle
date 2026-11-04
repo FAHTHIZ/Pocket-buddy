@@ -10,6 +10,16 @@ def reactNativeArchitectures = (project.findProperty("reactNativeArchitectures")
     .collect { it.trim() }
     .findAll { it }
 
+def releaseSigning = [
+    storeFile: project.findProperty("POCKET_BUDDY_RELEASE_STORE_FILE"),
+    storePassword: project.findProperty("POCKET_BUDDY_RELEASE_STORE_PASSWORD"),
+    keyAlias: project.findProperty("POCKET_BUDDY_RELEASE_KEY_ALIAS"),
+    keyPassword: project.findProperty("POCKET_BUDDY_RELEASE_KEY_PASSWORD")
+]
+def releaseSigningConfigured = releaseSigning.values().every {
+    it != null && !it.toString().trim().isEmpty()
+}
+
 react {
     autolinkLibrariesWithApp()
 }
@@ -29,12 +39,25 @@ android {
         ndk { abiFilters(*reactNativeArchitectures) }
     }
 
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseSigning.storeFile)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug { applicationIdSuffix ".debug" }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
-            signingConfig signingConfigs.debug
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
