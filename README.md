@@ -67,6 +67,21 @@ This repository invokes a system Gradle installation directly and does not commi
 
 The llama.rn and Nitro SQLite packages include native Android code, so rebuild the Android app after installing or upgrading dependencies.
 
+## Release signing
+
+Debug APKs are for local testing and are not production releases. The release variant does not fall back to the Android debug key. To sign a release, create a private keystore outside this repository and add these values to your local `~/.gradle/gradle.properties`:
+
+    POCKET_BUDDY_RELEASE_STORE_FILE=/absolute/path/to/pocket-buddy-release.jks
+    POCKET_BUDDY_RELEASE_STORE_PASSWORD=your-store-password
+    POCKET_BUDDY_RELEASE_KEY_ALIAS=pocket-buddy
+    POCKET_BUDDY_RELEASE_KEY_PASSWORD=your-key-password
+
+Then run:
+
+    npm run build:android:release
+
+Keep the keystore and passwords private, backed up securely, and out of Git. Without all four properties, Gradle produces an unsigned release APK.
+
 ## First-run configuration
 
 1. Open Models from the menu.
