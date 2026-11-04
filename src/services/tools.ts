@@ -27,7 +27,7 @@ function publicHttpsUrl(raw:string):URL{
 async function webSearch(query:string):Promise<string>{
  const config=await loadConfig();if(!config.searxngUrl.trim())throw new Error('Connect a SearXNG search instance in Settings to enable web search.');
  let endpoint:URL;try{endpoint=new URL(config.searxngUrl.trim());}catch{throw new Error('Enter a valid SearXNG HTTPS URL in Settings.');}
- if(endpoint.protocol!=='https:'||!endpoint.hostname||endpoint.username||endpoint.password)throw new Error('SearXNG endpoints must use HTTPS and must not contain embedded credentials.');
+ if(endpoint.protocol!=='https:'||!endpoint.hostname||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)throw new Error('SearXNG endpoints must use HTTPS and must not contain embedded credentials, query strings or fragments.');
  const response=await fetch(endpoint.toString().replace(/\/+$/,'')+'/search?q='+encodeURIComponent(query)+'&format=json',{headers:{Accept:'application/json'}});
  if(!response.ok)throw new Error('Search service returned HTTP '+response.status);
  const data=await response.json();
