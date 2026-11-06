@@ -136,7 +136,7 @@ jobs:
           tail -n 180 android-release-build.log
           echo "$code" > android-release.exit
           if [ "$code" -eq 0 ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/PocketBuddy.apk
+            cp android/app/build/outputs/apk/release/app-release.apk PocketBuddy.apk
           else
             echo "::error title=Android release build::Standalone ARM64 release build failed."
           fi
@@ -156,7 +156,7 @@ jobs:
           tail -n 140 android-smoke-build.log
           echo "$code" > android-smoke-build.exit
           if [ "$code" -eq 0 ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/PocketBuddy-smoke.apk
+            cp android/app/build/outputs/apk/release/app-release.apk PocketBuddy-smoke.apk
           else
             echo "::error title=Android emulator build::Could not create the x86_64 smoke-test APK."
           fi
@@ -198,7 +198,7 @@ jobs:
             adb wait-for-device
             adb shell getprop sys.boot_completed
             adb logcat -c
-            adb install -r android/app/build/outputs/apk/release/PocketBuddy-smoke.apk
+            adb install -r PocketBuddy-smoke.apk
             adb shell am start -W -n ai.pocketbuddy/com.pocketbuddy.MainActivity
             sleep 25
             adb shell pidof ai.pocketbuddy
@@ -229,7 +229,7 @@ jobs:
             android/gradlew.bat
             android/gradle/wrapper/gradle-wrapper.jar
             android/gradle/wrapper/gradle-wrapper.properties
-            android/app/build/outputs/apk/release/PocketBuddy.apk
+            PocketBuddy.apk
           if-no-files-found: warn
           retention-days: 14
 
@@ -240,7 +240,7 @@ jobs:
         shell: bash
         run: |
           tag="android-build-${GITHUB_RUN_NUMBER}"
-          apk="android/app/build/outputs/apk/release/PocketBuddy.apk"
+          apk="PocketBuddy.apk"
           notes="Standalone ARM64 Android test APK. It includes the bundled React Native JavaScript and was installed and launched in an Android emulator smoke test. Signed with the CI test key; this is not a Play Store production signing identity."
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" "$apk" --clobber
