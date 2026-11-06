@@ -162,6 +162,21 @@ jobs:
           fi
           exit "$code"
 
+      - name: Enable Linux KVM for Android emulator
+        if: success()
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Mark emulator smoke-test start
+        if: success()
+        shell: bash
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > emulator-smoke.started
+          echo "Prepared emulator smoke test."
+
       - name: Install, launch and verify the standalone app
         if: success()
         uses: reactivecircus/android-emulator-runner@v2
@@ -173,16 +188,20 @@ jobs:
           cores: 2
           ram-size: 4096M
           heap-size: 1024M
+          emulator-boot-timeout: 900
           disable-animations: true
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           script: |
-            trap 'code=$?; echo "$code" > emulator-smoke.exit; if [ "$code" -ne 0 ]; then adb logcat -d > android-startup.log || true; fi' EXIT
+            trap 'code=$?; echo "$code" > emulator-smoke.exit; adb logcat -d > android-startup.log 2>/dev/null || true; exit "$code"' EXIT
             set -euo pipefail
+            echo "Smoke script started at $(date -u +%FT%TZ)"
+            adb wait-for-device
+            adb shell getprop sys.boot_completed
             adb logcat -c
             adb install -r android/app/build/outputs/apk/release/PocketBuddy-smoke.apk
-            adb shell am start -n ai.pocketbuddy/com.pocketbuddy.MainActivity
+            adb shell am start -W -n ai.pocketbuddy/com.pocketbuddy.MainActivity
             sleep 25
-            adb shell pidof ai.pocketbuddy >/dev/null
+            adb shell pidof ai.pocketbuddy
             adb shell dumpsys activity activities | grep -F 'com.pocketbuddy.MainActivity'
             adb logcat -d > android-startup.log
             if grep -E 'FATAL EXCEPTION|Unable to load script|ReactNativeJS.*(Error|error)' android-startup.log; then
@@ -190,7 +209,6 @@ jobs:
               exit 1
             fi
             echo "Standalone APK installed and launched successfully."
-
       - name: Upload diagnostics and installable APK
         if: always()
         uses: actions/upload-artifact@v4
