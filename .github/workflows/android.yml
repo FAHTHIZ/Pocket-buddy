@@ -222,6 +222,7 @@ jobs:
             android-smoke-build.log
             android-smoke-build.exit
             android-startup.log
+            emulator-smoke.started
             emulator-smoke.exit
             package-lock.json
             android/gradlew
