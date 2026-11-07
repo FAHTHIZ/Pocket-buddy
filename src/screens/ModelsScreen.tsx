@@ -11,7 +11,7 @@ type QuickPick={id:string;name:string;repo:string;fileName:string;sizeLabel:stri
 const QUICK_PICKS:QuickPick[]=[
  {id:'qwen3-0.6b',name:'Qwen3 0.6B Instruct',repo:'tensorblock/Qwen_Qwen3-0.6B-GGUF',fileName:'Qwen3-0.6B-Q4_K_M.gguf',sizeLabel:'~484 MB',description:'A sensible first model for older Android phones. Good for short chats, summaries and everyday questions.',fitLabel:'Best starting point',minRamMb:3500},
  {id:'smollm2-360m',name:'SmolLM2 360M Instruct',repo:'bartowski/SmolLM2-360M-Instruct-GGUF',fileName:'SmolLM2-360M-Instruct-Q4_K_M.gguf',sizeLabel:'~271 MB',description:'The lightest download here. Choose this when keeping memory use and download size low matters most.',fitLabel:'Lightweight option',minRamMb:2500},
- {id:'qwen3-1.7b',name:'Qwen3 1.7B Instruct',repo:'tensorblock/Qwen_Qwen3-1.7B-GGUF',fileName:'Qwen3-1.7B-Q4_K_M.gguf',sizeLabel:'~1.28 GB',description:'A more capable but heavier option. Only shown on devices with about 6 GB RAM; it may run slowly or need a smaller context.',fitLabel:'For 6 GB devices · heavier',minRamMb:5500}
+ {id:'qwen3-1.7b',name:'Qwen3 1.7B Instruct',repo:'tensorblock/Qwen_Qwen3-1.7B-GGUF',fileName:'Qwen3-1.7B-Q4_K_M.gguf',sizeLabel:'~1.28 GB',description:'A more capable but heavier option. Only shown on devices with about 6 GB RAM; it may run slowly or need a smaller context.',fitLabel:'For 6 GB devices · heavier',minRamMb:5120}
 ];
 export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  const[query,setQuery]=useState(''),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});

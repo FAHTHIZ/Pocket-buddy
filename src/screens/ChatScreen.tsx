@@ -44,7 +44,7 @@ export default function ChatScreen(p:Props){
   {empty?<ScrollView style={s.welcomeScroll} contentContainerStyle={s.welcome} keyboardShouldPersistTaps="handled">
     <View style={s.logo}><Text style={s.logoGlyph}>✳</Text></View>
     <Text style={s.welcomeTitle}>{p.needsSetup?'Your AI starts here':'What can I do for you today?'}</Text>
-    <Text style={s.welcomeSubtitle}>{p.needsSetup?'Connect a provider or choose a local model. Pocket Buddy will do the setup for you.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
+    <Text style={s.welcomeSubtitle}>{p.needsSetup?'Pick a model sized for this phone. Pocket Buddy downloads and loads it for you, or you can connect a provider.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
     {p.needsSetup?<View style={s.setupCard}>
      <Text style={s.setupEyebrow}>QUICK SETUP · NO ACCOUNT NEEDED</Text>
      <Text style={s.setupTitle}>Get your first model</Text>
