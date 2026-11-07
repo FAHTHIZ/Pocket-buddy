@@ -7,9 +7,19 @@ export async function loadLocalModel(path:string,force=false):Promise<void>{
  if(localContext&&activeLocalPath===path&&!force)return;
  if(localContext){try{await localContext.release();}catch{}localContext=null;}
  const config=await loadConfig();
+ const options={model:path.startsWith('file://')?path:'file://'+path,n_ctx:config.nCtx,n_batch:Math.min(256,Math.max(64,Math.floor(config.nCtx/16))),use_mlock:false,flash_attn:false};
  try{
-  localContext=await initLlama({model:path.startsWith('file://')?path:'file://'+path,n_ctx:config.nCtx,n_batch:Math.min(256,Math.max(64,Math.floor(config.nCtx/16))),n_gpu_layers:config.nGpuLayers,use_mlock:false,flash_attn:false});
-  activeLocalPath=path;localRuntimeStatus=localContext?.gpu?'GPU acceleration active':(localContext?.reasonNoGPU?'CPU fallback: '+String(localContext.reasonNoGPU):'CPU inference');
+  try{
+   localContext=await initLlama({...options,n_gpu_layers:config.nGpuLayers});
+  }catch(gpuError){
+   if(config.nGpuLayers<=0)throw gpuError;
+   localContext=await initLlama({...options,n_gpu_layers:0});
+   localRuntimeStatus='CPU fallback after GPU offload failed: '+(gpuError instanceof Error?gpuError.message:String(gpuError)).slice(0,180);
+  }
+  activeLocalPath=path;
+  if(!localRuntimeStatus.startsWith('CPU fallback')){
+   localRuntimeStatus=localContext?.gpu?'GPU acceleration active':(localContext?.reasonNoGPU?'CPU fallback: '+String(localContext.reasonNoGPU):'CPU inference');
+  }
  }catch(error){localContext=null;activeLocalPath='';localRuntimeStatus='';throw error;}
 }
 export function isLocalModelLoaded():boolean{return !!localContext;}
