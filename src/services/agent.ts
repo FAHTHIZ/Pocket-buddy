@@ -63,7 +63,12 @@ async function buildContextMessages(history:ChatMessage[],conversationId:string|
  let summary='';
  if(start>0&&conversationId){
   try{summary=await summarizeOlderMessages(conversationId,history.slice(0,start),onEvent);}
-  catch{onEvent({type:'status',message:'Using recent conversation context'});summary=(await getConversationContext(conversationId).catch(()=>null))?.summary||'';}
+  catch{
+   onEvent({type:'status',message:'Using recent conversation context'});
+   const stored=await getConversationContext(conversationId).catch(()=>null);
+   const cursorStillPresent=!!stored&&history.slice(0,start).some(message=>message.id===stored.throughMessageId);
+   summary=cursorStillPresent?stored!.summary:'';
+  }
  }
  const summaryCharBudget=Math.max(256,Math.floor(summaryReserve*3.2));
  if(summary.length>summaryCharBudget)summary=summary.slice(-summaryCharBudget);
