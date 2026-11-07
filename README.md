@@ -133,7 +133,9 @@ Assistant messages have a **Read aloud** control. It uses the best matching voic
 - ComfyUI jobs are persisted and can be checked. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
-- Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.\n- Older turns are summarized when context budget is exceeded. The summary is a compact memory aid, not a vector database or a guarantee that every earlier detail is retained.\n- Offline speech recognition and standalone audio generation are not wired up yet.
+- Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.
+- Older turns are summarized when context budget is exceeded. The summary is a compact memory aid, not a vector database or a guarantee that every earlier detail is retained.
+- Offline speech recognition and standalone audio generation are not wired up yet.
 - No API key, model weight, workflow or custom node is bundled.
 
 ## Privacy and security

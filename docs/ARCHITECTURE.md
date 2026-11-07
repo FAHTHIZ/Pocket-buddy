@@ -88,7 +88,9 @@ The current adapter covers job submission, status and cancellation. A release-gr
 
 ## Storage
 
-- Conversations, messages and rolling context summaries: SQLite.\n- Installed model metadata: AsyncStorage; model weights: app-specific external files via Android DownloadManager.\n- Hugging Face read tokens: Android Keystore-backed secure storage.
+- Conversations, messages and rolling context summaries: SQLite.
+- Installed model metadata: AsyncStorage; model weights: app-specific external files via Android DownloadManager.
+- Hugging Face read tokens: Android Keystore-backed secure storage.
 - Generation jobs: SQLite.
 - Provider/GitHub/ComfyUI/MCP secrets: Android Keystore-backed secure storage.
 - Model files: app-specific external files via Android DownloadManager.
