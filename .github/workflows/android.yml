@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: pocket-buddy-android-v6-${{ github.ref }}
+  group: pocket-buddy-android-v7-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -197,35 +197,7 @@ jobs:
           emulator-boot-timeout: 900
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            trap 'code=$?; echo "$code" > emulator-smoke.exit; adb logcat -d > android-startup.log 2>/dev/null || true; exit "$code"' EXIT
-            set -euo pipefail
-            echo "Smoke script started at $(date -u +%FT%TZ)"
-            adb wait-for-device
-            adb shell getprop sys.boot_completed
-            adb logcat -c
-            adb install -r PocketBuddy-smoke.apk
-            adb shell am start -W -n ai.pocketbuddy/com.pocketbuddy.MainActivity
-            sleep 25
-            activity_state="$(adb shell dumpsys activity activities)"
-            # Android versions vary in how dumpsys abbreviates the Activity class (for example,
-            # ai.pocketbuddy/.MainActivity versus ai.pocketbuddy/com.pocketbuddy.MainActivity).
-            # Verify the application package in ActivityManager and confirm its process is alive.
-            if ! printf '%s\n' "$activity_state" | grep -F 'ai.pocketbuddy' >/dev/null; then
-              echo "ActivityManager did not report the Pocket Buddy package after launch."
-              adb shell dumpsys activity top || true
-              exit 1
-            fi
-            if ! adb shell pidof ai.pocketbuddy >/dev/null; then
-              echo "Pocket Buddy process is not running after launch."
-              exit 1
-            fi
-            adb logcat -d > android-startup.log
-            if grep -E 'FATAL EXCEPTION|Unable to load script|ReactNativeJS.*(Error|error)' android-startup.log; then
-              echo "Android startup log contains a fatal or JavaScript launch error."
-              exit 1
-            fi
-            echo "Standalone APK installed, launched and remained running."
+          script: bash scripts/android-emulator-smoke.sh
       - name: Upload diagnostics and installable APK
         if: always()
         uses: actions/upload-artifact@v4
