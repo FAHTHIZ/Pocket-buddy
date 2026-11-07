@@ -3,8 +3,14 @@ name: Android validation
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +18,7 @@ permissions:
 
 concurrency:
   group: pocket-buddy-android-v4-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk

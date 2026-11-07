@@ -1,5 +1,5 @@
 import React,{useEffect,useState}from'react';
-import{ActivityIndicator,Alert,FlatList,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,type HubFile,type HubModel}from'../services/modelLibrary';
 import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark}from'../services/llm';
@@ -48,8 +48,14 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
    setInstalled(await registerInstalledModel(record));await AsyncStorage.setItem('pocket-buddy.local-model-uri',uri);await AsyncStorage.setItem('pocket-buddy.active-model',modelName);
    await loadLocalModel(uri);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
   }catch(e){Alert.alert('Could not install model',e instanceof Error?e.message:String(e));}finally{setBusy(false);setDownloading('');}};
-  if(warnings.length)Alert.alert('Check device compatibility',warnings.join('\n\n'),[{text:'Cancel',style:'cancel'},{text:'Try anyway',onPress:start}]);
-  else if(quickStart)await start();
+  if(warnings.length){
+   if(quickStart){
+    await new Promise<void>(resolve=>Alert.alert('Check device compatibility',warnings.join('\n\n'),[
+     {text:'Cancel',style:'cancel',onPress:()=>resolve()},
+     {text:'Try anyway',onPress:()=>{void start().finally(()=>resolve());}}
+    ],{cancelable:false}));
+   }else Alert.alert('Check device compatibility',warnings.join('\n\n'),[{text:'Cancel',style:'cancel'},{text:'Try anyway',onPress:start}]);
+  }else if(quickStart)await start();
   else Alert.alert('Download model?',(displayName||modelId)+'\n'+file.name+'\n'+bytesLabel(file.size),[{text:'Cancel',style:'cancel'},{text:'Download',onPress:start}]);
  };
  const quickInstall=async(preset:QuickPick)=>{
@@ -80,58 +86,62 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  };
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backGlyph}>‹</Text></Pressable><Text style={s.title}>Models</Text><Pressable onPress={onOpenSettings}><Text style={s.settings}>Settings</Text></Pressable></View>
-  <View style={s.intro}><Text style={s.heading}>Your models</Text><Text style={s.sub}>Pick a model sized for this phone. Download once, and Pocket Buddy loads it straight into your chat. No API key needed.</Text></View>
-  <View style={s.quickSection}>
-   <View style={s.quickHeading}><View style={{flex:1}}><Text style={s.quickTitle}>Start with a recommended model</Text><Text style={s.quickSubtitle}>Curated GGUF picks · one tap to download and start</Text></View><Text style={s.quickSpark}>✦</Text></View>
-   {recommendedPicks.map(item=>{
-    const existing=installed.find(entry=>entry.modelId===item.repo&&entry.fileName===item.fileName);
-    const pending=pendingDownloads.find(entry=>entry.modelId===item.repo&&entry.fileName===item.fileName);
-    const active=existing?.path===activePath;
-    const buttonLabel=quickLoading===item.id?'Preparing…':pending?'Download in progress':active?'In chat':existing?'Load model':'Download & start';
-    return <View key={item.id} style={s.quickCard}>
-     <View style={s.quickCardTop}><View style={{flex:1}}><Text style={s.quickName}>{item.name}</Text><Text style={s.quickMeta}>{item.sizeLabel} · Q4_K_M · GGUF</Text></View><View style={s.quickTag}><Text style={s.quickTagText}>{item.fitLabel}</Text></View></View>
-     <Text style={s.quickDescription}>{item.description}</Text>
-     <View style={s.quickCardBottom}><Text style={s.quickOffline}>↓  Download once · use offline</Text>
-      <Pressable disabled={busy||!!pending} style={[s.quickButton,(busy||!!pending)&&s.quickButtonDisabled]} onPress={()=>existing?activate(existing):quickInstall(item)}><Text style={s.quickButtonText}>{buttonLabel}</Text></Pressable>
-     </View>
-    </View>;
-   })}
-   {!recommendedPicks.length?<Text style={s.quickSubtitle}>Reading your phone's memory profile…</Text>:null}
-   {device?.totalRamMb?<Text style={s.quickFootnote}>Recommendations use detected physical RAM. The larger model is hidden on devices below 6 GB; actual speed and fit still depend on free memory, context size and thermal limits.</Text>:null}
-  </View>
-  {pendingDownloads.length?<View style={s.pendingPanel}>
-   <Text style={s.pendingTitle}>Downloads</Text>
-   {pendingDownloads.map(item=><View key={item.downloadId} style={s.pendingRow}>
-    <View style={{flex:1}}><Text style={s.pendingName} numberOfLines={1}>{item.name} · {item.fileName}</Text><Text style={s.pendingStatus}>{item.status==='failed'?'Download failed':item.status==='unknown'?'Checking system download':item.status+' · '+Math.round(item.progress*100)+'%'}</Text></View>
-    {item.status!=='failed'?<Pressable disabled={busy} style={s.pendingCancel} onPress={()=>cancelPending(item.downloadId)}><Text style={s.pendingCancelText}>Cancel</Text></Pressable>:null}
-   </View>)}
-  </View>:null}
-  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
-   {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
-    {item.path===activePath?<Text style={s.activeHint}>Switch to another model before deleting</Text>:<Pressable disabled={busy} style={s.removeButton} onPress={()=>removeModel(item)}><Text style={s.removeButtonText}>Remove download</Text></Pressable>}</View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}
-  </ScrollView>
-  {runtimeStatus?<Text style={s.runtimeStatus}>Last loaded runtime: {runtimeStatus}</Text>:null}
-  {activePath?<View style={s.benchmarkCard}>
-   <View style={s.benchmarkTop}>
-    <View style={{flex:1}}><Text style={s.benchmarkTitle}>Device benchmark</Text><Text style={s.benchmarkSub}>Native llama.cpp test · 512 prompt / 128 generated tokens · 3 runs</Text></View>
-    <Pressable disabled={benchmarkBusy||busy} onPress={runBenchmark} style={s.benchmarkButton}><Text style={s.benchmarkButtonText}>{benchmarkBusy?'Running…':'Run'}</Text></Pressable>
+  <ScrollView style={s.content} contentContainerStyle={s.contentContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+   <View style={s.intro}><Text style={s.heading}>Your models</Text><Text style={s.sub}>Pick a model sized for this phone. Download once, and Pocket Buddy loads it straight into your chat. No API key needed.</Text></View>
+   {device?<View style={s.device}><Text style={s.deviceTitle}>{device.manufacturer} {device.model}</Text><Text style={s.deviceInfo}>{(device.totalRamMb/1024).toFixed(1)} GB RAM · {Math.round(device.availableRamMb)} MB free now · {Math.round(device.availableStorageMb)} MB free storage · {device.soc||'SoC unknown'}</Text></View>:null}
+   {(busy||!!quickLoading)?<View style={s.progress}><ActivityIndicator color="#eee"/><Text style={s.progressText}>{downloading?'Downloading '+downloading:quickLoading?'Preparing your model…':'Working…'} {progress>0?progress+'%':''}</Text></View>:null}
+   {downloading?<View style={s.progressTrack}><View style={[s.progressFill,{width:progress+'%'}]}/></View>:null}
+   {pendingDownloads.length?<View style={s.pendingPanel}>
+    <Text style={s.pendingTitle}>Downloads</Text>
+    {pendingDownloads.map(item=><View key={item.downloadId} style={s.pendingRow}>
+     <View style={{flex:1}}><Text style={s.pendingName} numberOfLines={1}>{item.name} · {item.fileName}</Text><Text style={s.pendingStatus}>{item.status==='failed'?'Download failed':item.status==='unknown'?'Checking system download':item.status+' · '+Math.round(item.progress*100)+'%'}</Text></View>
+     {item.status!=='failed'?<Pressable disabled={busy} style={s.pendingCancel} onPress={()=>cancelPending(item.downloadId)}><Text style={s.pendingCancelText}>Cancel</Text></Pressable>:null}
+    </View>)}
+   </View>:null}
+   <View style={s.quickSection}>
+    <View style={s.quickHeading}><View style={{flex:1}}><Text style={s.quickTitle}>Start with a recommended model</Text><Text style={s.quickSubtitle}>Curated GGUF picks · one tap to download and start</Text></View><Text style={s.quickSpark}>✦</Text></View>
+    {recommendedPicks.map(item=>{
+     const existing=installed.find(entry=>entry.modelId===item.repo&&entry.fileName===item.fileName);
+     const pending=pendingDownloads.find(entry=>entry.modelId===item.repo&&entry.fileName===item.fileName);
+     const active=existing?.path===activePath;
+     const buttonLabel=quickLoading===item.id?'Preparing…':pending?'Download in progress':active?'In chat':existing?'Load model':'Download & start';
+     return <View key={item.id} style={s.quickCard}>
+      <View style={s.quickCardTop}><View style={{flex:1}}><Text style={s.quickName}>{item.name}</Text><Text style={s.quickMeta}>{item.sizeLabel} · Q4_K_M · GGUF</Text></View><View style={s.quickTag}><Text style={s.quickTagText}>{item.fitLabel}</Text></View></View>
+      <Text style={s.quickDescription}>{item.description}</Text>
+      <View style={s.quickCardBottom}><Text style={s.quickOffline}>↓  Download once · use offline</Text>
+       <Pressable disabled={busy||!!pending||!!quickLoading} style={[s.quickButton,(busy||!!pending||!!quickLoading)&&s.quickButtonDisabled]} onPress={()=>existing?activate(existing):quickInstall(item)}><Text style={s.quickButtonText}>{buttonLabel}</Text></Pressable>
+      </View>
+     </View>;
+    })}
+    {!recommendedPicks.length?<Text style={s.quickSubtitle}>Reading your phone's memory profile…</Text>:null}
+    {device?.totalRamMb?<Text style={s.quickFootnote}>Recommendations use detected physical RAM. The larger model is hidden on devices below 5 GB; actual speed and fit still depend on free memory, context size and thermal limits.</Text>:null}
    </View>
-   {benchmark?<View style={s.benchmarkMetrics}>
-    <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.promptTokensPerSecond.toFixed(1)}</Text><Text style={s.benchmarkLabel}>Prompt tok/s</Text></View>
-    <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.generationTokensPerSecond.toFixed(1)}</Text><Text style={s.benchmarkLabel}>Generation tok/s</Text></View>
-    <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.gpuActive?'GPU':'CPU'}</Text><Text style={s.benchmarkLabel}>Active backend</Text></View>
-   </View>:<Text style={s.benchmarkSub}>Run a benchmark to measure prompt processing and generation speed on this device.</Text>}
-  </View>:null}
-  {device?<View style={s.device}><Text style={s.deviceTitle}>{device.manufacturer} {device.model}</Text><Text style={s.deviceInfo}>{(device.totalRamMb/1024).toFixed(1)} GB RAM · {Math.round(device.availableRamMb)} MB free now · {Math.round(device.availableStorageMb)} MB free storage · {device.soc||'SoC unknown'}</Text></View>:null}
-  <View style={s.searchBox}><TextInput value={query} onChangeText={setQuery} placeholder="Search any GGUF model…" placeholderTextColor="#777" style={s.search}/><Pressable onPress={search} style={s.searchButton}><Text style={s.searchButtonText}>Search</Text></Pressable></View>
-  {busy?<View style={s.progress}><ActivityIndicator color="#eee"/><Text style={s.sub}>{downloading?'Downloading '+downloading:'Working…'} {progress>0?progress+'%':''}</Text></View>:null}
-  {downloading?<View style={s.progressTrack}><View style={[s.progressFill,{width:progress+'%'}]}/></View>:null}
-  <FlatList data={models} keyExtractor={item=>item.id} contentContainerStyle={s.list} renderItem={({item})=><View style={s.card}><Pressable onPress={()=>showFiles(item.id)}><Text style={s.modelName}>{item.id}</Text><Text style={s.meta}>{item.downloads.toLocaleString()} downloads · {item.likes.toLocaleString()} likes · GGUF</Text><Text style={s.choose}>{selected===item.id?'Hide files ↑':'Choose a quantization ↓'}</Text></Pressable>{selected===item.id?(files[item.id]||[]).length?(files[item.id]||[]).map(file=>renderFile(item,file)):<Text style={s.empty}>No GGUF files were found in this repository.</Text>:null}</View>} ListEmptyComponent={<View style={s.emptyWrap}><Text style={s.empty}>Search Hugging Face to browse compatible GGUF models.</Text></View>}/>
-  <Text style={s.note}>Check each model card and license before downloading. File size is only a rough fit indicator: runtime memory also depends on context length, architecture and quantization.</Text>
+   <View style={s.libraryHeading}><Text style={s.quickTitle}>Your library</Text><Text style={s.quickSubtitle}>{installed.length} downloaded · tap to load or remove</Text></View>
+   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
+    {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
+     {item.path===activePath?<Text style={s.activeHint}>Switch to another model before deleting</Text>:<Pressable disabled={busy} style={s.removeButton} onPress={()=>removeModel(item)}><Text style={s.removeButtonText}>Remove download</Text></Pressable>}</View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}
+   </ScrollView>
+   {runtimeStatus?<Text style={s.runtimeStatus}>Last loaded runtime: {runtimeStatus}</Text>:null}
+   {activePath?<View style={s.benchmarkCard}>
+    <View style={s.benchmarkTop}>
+     <View style={{flex:1}}><Text style={s.benchmarkTitle}>Device benchmark</Text><Text style={s.benchmarkSub}>Native llama.cpp test · 512 prompt / 128 generated tokens · 3 runs</Text></View>
+     <Pressable disabled={benchmarkBusy||busy} onPress={runBenchmark} style={s.benchmarkButton}><Text style={s.benchmarkButtonText}>{benchmarkBusy?'Running…':'Run'}</Text></Pressable>
+    </View>
+    {benchmark?<View style={s.benchmarkMetrics}>
+     <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.promptTokensPerSecond.toFixed(1)}</Text><Text style={s.benchmarkLabel}>Prompt tok/s</Text></View>
+     <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.generationTokensPerSecond.toFixed(1)}</Text><Text style={s.benchmarkLabel}>Generation tok/s</Text></View>
+     <View style={s.benchmarkMetric}><Text style={s.benchmarkValue}>{benchmark.gpuActive?'GPU':'CPU'}</Text><Text style={s.benchmarkLabel}>Active backend</Text></View>
+    </View>:<Text style={s.benchmarkSub}>Run a benchmark to measure prompt processing and generation speed on this device.</Text>}
+   </View>:null}
+   <View style={s.exploreHeading}><Text style={s.quickTitle}>Explore more models</Text><Text style={s.quickSubtitle}>Search Hugging Face for other GGUF downloads</Text></View>
+   <View style={s.searchBox}><TextInput value={query} onChangeText={setQuery} placeholder="Search any GGUF model…" placeholderTextColor="#777" style={s.search}/><Pressable onPress={search} disabled={busy} style={s.searchButton}><Text style={s.searchButtonText}>Search</Text></Pressable></View>
+   {models.length?models.map(item=><View key={item.id} style={s.card}><Pressable onPress={()=>showFiles(item.id)}><Text style={s.modelName}>{item.id}</Text><Text style={s.meta}>{item.downloads.toLocaleString()} downloads · {item.likes.toLocaleString()} likes · GGUF</Text><Text style={s.choose}>{selected===item.id?'Hide files ↑':'Choose a quantization ↓'}</Text></Pressable>{selected===item.id?(files[item.id]||[]).length?(files[item.id]||[]).map(file=>renderFile(item,file)):<Text style={s.empty}>No GGUF files were found in this repository.</Text>:null}</View>):<View style={s.emptyWrap}><Text style={s.empty}>Search Hugging Face to browse compatible GGUF models.</Text></View>}
+   <Text style={s.note}>Check each model card and license before downloading. File size is only a rough fit indicator: runtime memory also depends on context length, architecture and quantization.</Text>
+  </ScrollView>
  </View>;
 }
 const s=StyleSheet.create({
- root:{flex:1,backgroundColor:C.bg},
+ root:{flex:1,backgroundColor:C.bg},content:{flex:1},contentContainer:{paddingBottom:24},
  quickSection:{marginHorizontal:16,marginTop:9,marginBottom:5,padding:12,borderRadius:16,backgroundColor:'#17191e',borderWidth:1,borderColor:'#303640'},
  quickHeading:{flexDirection:'row',alignItems:'center',marginBottom:9},quickTitle:{color:C.text,fontSize:13,fontWeight:'800'},quickSubtitle:{color:C.muted,fontSize:10,lineHeight:15,marginTop:3},quickSpark:{color:'#c6d7ff',fontSize:19,paddingHorizontal:5},
  quickCard:{backgroundColor:'#202329',borderWidth:1,borderColor:'#383f49',borderRadius:12,padding:11,marginTop:8},
@@ -139,7 +149,7 @@ const s=StyleSheet.create({
  quickTag:{backgroundColor:'#303640',borderRadius:10,paddingHorizontal:8,paddingVertical:5},quickTagText:{color:'#d1dbee',fontSize:8,fontWeight:'700'},
  quickDescription:{color:'#b7bdc8',fontSize:10,lineHeight:15,marginTop:8},quickCardBottom:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:9},
  quickOffline:{color:'#99bca9',fontSize:8,flex:1},quickButton:{backgroundColor:'#e9edf5',borderRadius:15,paddingHorizontal:13,paddingVertical:9},quickButtonDisabled:{opacity:0.55},quickButtonText:{color:'#13171d',fontSize:9,fontWeight:'800'},
- quickFootnote:{color:'#777f8b',fontSize:8,lineHeight:12,marginTop:8},
+ quickFootnote:{color:'#777f8b',fontSize:8,lineHeight:12,marginTop:8}, libraryHeading:{paddingHorizontal:18,marginTop:14,marginBottom:2},exploreHeading:{paddingHorizontal:18,marginTop:16,marginBottom:8},
  header:{height:58,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomColor:'#25252b',borderBottomWidth:1},back:{width:40,height:40,borderRadius:20,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},backGlyph:{color:C.text,fontSize:30,marginTop:-3},title:{color:C.text,fontSize:17,fontWeight:'700'},settings:{color:'#bfcdf0',fontSize:12,fontWeight:'700',padding:8},
  intro:{paddingHorizontal:19,paddingTop:16,paddingBottom:8},heading:{color:C.text,fontSize:22,fontWeight:'700'},sub:{color:C.muted,fontSize:12,lineHeight:18,marginTop:5},installedList:{paddingHorizontal:15,paddingVertical:8,gap:9,minHeight:105},installedCard:{width:170,backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:13,padding:10},installedCardActive:{borderColor:'#6b9d86'},installedName:{color:C.text,fontSize:12,fontWeight:'700'},installedFile:{color:C.muted,fontSize:9,marginTop:5},installedSize:{color:'#8b8b95',fontSize:9,marginTop:4},loadButton:{backgroundColor:'#eee',paddingVertical:8,borderRadius:14,alignItems:'center',marginTop:9},loadButtonText:{color:'#111',fontWeight:'700',fontSize:10},loadedButton:{backgroundColor:'#243a30'},loadedButtonText:{color:'#c6f0d9'},noModels:{justifyContent:'center',paddingHorizontal:6},runtimeStatus:{color:'#aeb8c3',fontSize:10,paddingHorizontal:17,paddingBottom:5},
  pendingPanel:{marginHorizontal:16,marginBottom:10,padding:11,borderRadius:12,backgroundColor:'#202329',borderWidth:1,borderColor:'#39414c'},pendingTitle:{color:C.text,fontSize:12,fontWeight:'800',marginBottom:6},pendingRow:{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:6},pendingName:{color:'#e6e6eb',fontSize:10,fontWeight:'700'},pendingStatus:{color:C.muted,fontSize:9,marginTop:3},pendingCancel:{paddingHorizontal:12,paddingVertical:7,borderRadius:14,backgroundColor:'#383840'},pendingCancelText:{color:'#e4e4e8',fontSize:9,fontWeight:'700'},removeButton:{alignItems:'center',paddingVertical:6,marginTop:5},removeButtonText:{color:'#e5b1b1',fontSize:9,fontWeight:'700'},activeHint:{color:'#aab4c3',fontSize:9,textAlign:'center',marginTop:6},
@@ -148,5 +158,5 @@ const s=StyleSheet.create({
  benchmarkSub:{color:C.muted,fontSize:10,lineHeight:15,marginTop:4},benchmarkButton:{backgroundColor:'#e9e9ee',paddingHorizontal:16,paddingVertical:9,borderRadius:18},benchmarkButtonText:{color:'#111',fontSize:11,fontWeight:'800'},
  benchmarkMetrics:{flexDirection:'row',justifyContent:'space-between',marginTop:12},benchmarkMetric:{flex:1},benchmarkValue:{color:'#f2f2f5',fontSize:19,fontWeight:'800'},benchmarkLabel:{color:'#a8a8b1',fontSize:9,marginTop:3},
  device:{marginHorizontal:16,backgroundColor:'#20262a',borderRadius:12,padding:11,marginBottom:12},deviceTitle:{color:'#e4e9ef',fontSize:12,fontWeight:'700'},deviceInfo:{color:'#aeb8c3',fontSize:10,marginTop:4},searchBox:{marginHorizontal:16,backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:15,paddingLeft:13,paddingRight:6,flexDirection:'row',alignItems:'center'},search:{flex:1,color:C.text,fontSize:13,paddingVertical:12},searchButton:{backgroundColor:'#eee',borderRadius:12,paddingHorizontal:15,paddingVertical:9},searchButtonText:{color:'#111',fontWeight:'700',fontSize:11},
- progress:{flexDirection:'row',gap:9,alignItems:'center',paddingHorizontal:18,paddingVertical:10},progressTrack:{height:3,backgroundColor:'#35353c',marginHorizontal:16,borderRadius:2},progressFill:{height:3,backgroundColor:'#aab9d8',borderRadius:2},list:{padding:15,gap:9,paddingBottom:10},card:{backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:15,padding:13},modelName:{color:C.text,fontSize:13,fontWeight:'700'},meta:{color:C.muted,fontSize:10,marginTop:5},choose:{color:'#b9c9e8',fontSize:11,fontWeight:'700',marginTop:10},fileRow:{flexDirection:'row',alignItems:'center',gap:9,borderTopWidth:1,borderTopColor:C.line,paddingTop:10,marginTop:10},fileName:{color:'#e1e1e8',fontSize:10,fontWeight:'600'},fileSize:{color:C.muted,fontSize:10,marginTop:3},install:{backgroundColor:'#eee',borderRadius:15,paddingHorizontal:13,paddingVertical:8},installText:{color:'#111',fontSize:10,fontWeight:'700'},emptyWrap:{padding:24,alignItems:'center'},empty:{color:C.muted,fontSize:12,lineHeight:18,textAlign:'center'},note:{color:'#73737d',fontSize:9,lineHeight:14,paddingHorizontal:18,paddingBottom:9},
+ progress:{flexDirection:'row',gap:9,alignItems:'center',paddingHorizontal:18,paddingVertical:10},progressText:{color:C.muted,fontSize:11},progressTrack:{height:3,backgroundColor:'#35353c',marginHorizontal:16,borderRadius:2},progressFill:{height:3,backgroundColor:'#aab9d8',borderRadius:2},list:{padding:15,gap:9,paddingBottom:10},card:{backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:15,padding:13},modelName:{color:C.text,fontSize:13,fontWeight:'700'},meta:{color:C.muted,fontSize:10,marginTop:5},choose:{color:'#b9c9e8',fontSize:11,fontWeight:'700',marginTop:10},fileRow:{flexDirection:'row',alignItems:'center',gap:9,borderTopWidth:1,borderTopColor:C.line,paddingTop:10,marginTop:10},fileName:{color:'#e1e1e8',fontSize:10,fontWeight:'600'},fileSize:{color:C.muted,fontSize:10,marginTop:3},install:{backgroundColor:'#eee',borderRadius:15,paddingHorizontal:13,paddingVertical:8},installText:{color:'#111',fontSize:10,fontWeight:'700'},emptyWrap:{padding:24,alignItems:'center'},empty:{color:C.muted,fontSize:12,lineHeight:18,textAlign:'center'},note:{color:'#73737d',fontSize:9,lineHeight:14,paddingHorizontal:18,paddingBottom:9},
 });
