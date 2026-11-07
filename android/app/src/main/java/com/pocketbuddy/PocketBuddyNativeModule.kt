@@ -118,20 +118,27 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
                 when (status) {
                     DownloadManager.STATUS_SUCCESSFUL -> {
                         result.putString("status", "complete")
-                        // Use the supported download URI API instead of the deprecated
-                        // COLUMN_LOCAL_FILENAME, which can be blocked on modern Android.
-                        val localUri = manager.getUriForDownloadedFile(downloadId.toLong())
+                        // DownloadManager was given this exact title and destination filename
+                        // in Pocket Buddy's private external-files directory. Reconstruct the
+                        // path from the non-deprecated title column instead of reading
+                        // COLUMN_LOCAL_FILENAME or assuming the returned URI is a file:// URI.
                         val modelDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.canonicalFile
-                        val localFile = localUri
-                            ?.takeIf { uri -> uri.scheme == "file" && !uri.path.isNullOrBlank() }
-                            ?.path
-                            ?.let { path -> File(path).canonicalFile }
+                        val downloadTitle = it.getString(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE))
+                        val safeFileName = downloadTitle?.takeIf { name ->
+                            name.matches(Regex("[A-Za-z0-9._-]{1,180}")) && name.endsWith(".gguf", ignoreCase = true)
+                        }
+                        val localFile = if (modelDirectory != null && safeFileName != null) {
+                            File(modelDirectory, safeFileName).canonicalFile
+                        } else {
+                            null
+                        }
                         if (modelDirectory == null || localFile == null ||
-                            localFile.parentFile?.canonicalFile != modelDirectory || !localFile.isFile
+                            localFile.parentFile?.canonicalFile != modelDirectory ||
+                            !localFile.isFile || localFile.length() <= 0L
                         ) {
                             promise.reject(
                                 "DOWNLOAD_PATH_UNAVAILABLE",
-                                "Android completed the download but did not expose a readable model file in Pocket Buddy's private model directory."
+                                "Android completed the download but Pocket Buddy could not verify the model file in its private model directory."
                             )
                             return
                         }
