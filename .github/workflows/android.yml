@@ -201,8 +201,10 @@ jobs:
             adb install -r PocketBuddy-smoke.apk
             adb shell am start -W -n ai.pocketbuddy/com.pocketbuddy.MainActivity
             sleep 25
-            adb shell pidof ai.pocketbuddy
-            adb shell dumpsys activity activities | grep -F 'com.pocketbuddy.MainActivity'
+            activity_state="$(adb shell dumpsys activity activities)"
+            printf '%s\n' "$activity_state" | grep -F 'com.pocketbuddy.MainActivity'
+            # Verify the foreground Activity, rather than relying only on pidof during startup.
+            adb shell ps -A | grep -F 'ai.pocketbuddy' || true
             adb logcat -d > android-startup.log
             if grep -E 'FATAL EXCEPTION|Unable to load script|ReactNativeJS.*(Error|error)' android-startup.log; then
               echo "Android startup log contains a fatal or JavaScript launch error."

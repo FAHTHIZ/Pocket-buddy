@@ -116,7 +116,7 @@ function BuddyApp(){
     if(event.type==='clear_tokens')setLiveText('');
     if(event.type==='tool_start')setStatus('Using '+event.name);
     if(event.type==='tool_result')setStatus('Reviewing tool result');
-   },confirmTool,toolsEnabled);
+   },confirmTool,toolsEnabled,id);
    const assistant:ChatMessage={id:'assistant-'+Date.now(),role:'assistant',content:answer,createdAt:Date.now()};
    const complete=[...next,assistant];setMessages(complete);setLiveText('');
    await saveCurrent(id,complete,title);
@@ -169,7 +169,7 @@ function BuddyApp(){
   }else{
    const uri=await AsyncStorage.getItem('pocket-buddy.local-model-uri');
    if(uri){
-    try{await loadLocalModel(uri);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
+    try{await loadLocalModel(uri,true);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
     catch(e){setModelName('Local model unavailable');setSetupComplete(false);setBootError(e instanceof Error?e.message:String(e));}
    }else{setModelName('Choose a local model');setSetupComplete(false);}
   }

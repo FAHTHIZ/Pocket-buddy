@@ -23,7 +23,7 @@ Pocket Buddy is an Android-first personal AI workspace. Its default experience i
 | App/UI | React Native 0.87.1, React 19.2.3, TypeScript, dark chat-first interface |
 | Local text models | llama.rn 0.13.0-rc.9, llama.cpp, GGUF |
 | Remote models | OpenAI-compatible Chat Completions, SSE streaming and JSON fallback |
-| Model discovery | Hugging Face Hub API, GGUF file listing and Android DownloadManager |
+| Model discovery | Hugging Face Hub API, optional secure read token for gated access, installed-model library and Android DownloadManager |
 | Local storage | Nitro SQLite 10.2.0, async queries and transactions |
 | Secrets | react-native-keychain (Android Keystore-backed) |
 | Agent | Bounded multi-turn tool loop and direct media intent routing |
@@ -87,7 +87,7 @@ Keep the keystore and passwords private, backed up securely, and out of Git. Wit
 1. Open Pocket Buddy. The chat welcome screen appears first; chat-history restoration and local-model loading happen in the background.
 2. Paste an OpenAI-compatible provider URL and API key into the welcome card. The model ID is optional: Pocket Buddy queries the provider's `/models` endpoint, tries available chat models, and sends a small connection test.
 3. When the test succeeds, the provider is saved and the same screen becomes the normal chat session. The API key is stored using Android secure storage.
-4. To use an on-device model instead, choose **Use a local model** from the welcome card. Browse GGUF files, select a quantization and install it. Model loading can fail if the runtime memory footprint exceeds available RAM.
+4. To use an on-device model instead, choose **Use a local model** from the welcome card. Browse GGUF files, select a quantization and install it. Installed models remain in the library for switching without another download. A Hugging Face read token in Settings enables downloads of models your account is permitted to access.
 5. Settings, Connectors and Media library remain available from the side drawer for optional advanced configuration. They are not required to connect a text provider and start chatting.
 
 A provider that does not expose `/models` can still be used by entering its exact model ID in the optional Model ID field. Provider URLs must be HTTPS and OpenAI-compatible. API keys are never accepted inside URLs.
@@ -105,7 +105,7 @@ A provider that does not expose `/models` can still be used by entering its exac
 - github_create_issue — write operation with confirmation.
 - MCP tools — discovered from connected servers; remote tool calls require confirmation.
 
-The agent caps tool rounds and the number of calls per round. Tool results and retrieved content are untrusted data.
+The agent caps tool rounds and the number of calls per round. Older turns are summarized when the configured context budget is exceeded. Tool results and retrieved content are untrusted data.
 
 ## One-link Android install
 
@@ -133,7 +133,7 @@ Assistant messages have a **Read aloud** control. It uses the best matching voic
 - ComfyUI jobs are persisted and can be checked. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
-- Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.
+- Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.\n- Older turns are summarized when context budget is exceeded. The summary is a compact memory aid, not a vector database or a guarantee that every earlier detail is retained.\n- Offline speech recognition and standalone audio generation are not wired up yet.
 - No API key, model weight, workflow or custom node is bundled.
 
 ## Privacy and security
