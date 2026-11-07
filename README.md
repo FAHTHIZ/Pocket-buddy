@@ -1,6 +1,8 @@
 > **[Download Pocket Buddy for Android (ARM64 APK)](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
 >
-> This link always points to the latest successful Android validation release. Builds are signed with the CI test key, not a Play Store production key. A new APK replaces the download only after the full validation workflow passes.
+> The APK is published here only after the full Android validation workflow passes. **If the release link is not available yet, open the [Android validation workflow](https://github.com/FAHTHIZ/Pocket-buddy/actions/workflows/android.yml) and download `PocketBuddy.apk` from a successful run's validation artifact.**
+>
+> Builds use a CI test-signing key, not a Play Store production signing identity.
 
 # Pocket Buddy
 
