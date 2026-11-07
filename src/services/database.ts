@@ -45,7 +45,7 @@ export async function saveConversationContext(context:ConversationContext):Promi
 export async function saveGenerationJob(job:GenerationJob):Promise<void>{
  const db=await database();await db.executeAsync('INSERT OR REPLACE INTO generation_jobs(id,kind,prompt,prompt_id,status,created_at,outputs) VALUES(?,?,?,?,?,?,?)',[job.id,job.kind,job.prompt,job.promptId,job.status,job.createdAt,JSON.stringify(job.outputs||[])]);
 }
-export async function updateGenerationJob(promptId:string,status:string,outputs:string[]=[]):Promise<void>{const db=await database();await db.executeAsync('UPDATE generation_jobs SET status=?,outputs=? WHERE prompt_id=?',[status,JSON.stringify(outputs),promptId]);}
+export async function updateGenerationJob(promptId:string,status:string,outputs?:string[]):Promise<void>{const db=await database();if(outputs?.length){await db.executeAsync('UPDATE generation_jobs SET status=?,outputs=? WHERE prompt_id=?',[status,JSON.stringify(outputs),promptId]);}else{await db.executeAsync('UPDATE generation_jobs SET status=? WHERE prompt_id=?',[status,promptId]);}}
 export async function listGenerationJobs():Promise<GenerationJob[]>{
  const db=await database(),result=await db.executeAsync('SELECT * FROM generation_jobs ORDER BY created_at DESC LIMIT 200'),jobs:GenerationJob[]=[];
  for(const row of result.results as Row[]){let outputs:string[]=[];try{outputs=JSON.parse(row.outputs||'[]');}catch{outputs=[];}jobs.push({id:String(row.id),kind:row.kind,prompt:String(row.prompt),promptId:String(row.prompt_id),status:String(row.status),createdAt:Number(row.created_at),outputs});}

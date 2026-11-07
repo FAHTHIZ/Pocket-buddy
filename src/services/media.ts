@@ -40,7 +40,7 @@ export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1):Prom
  for(let index=0;index<amount;index++){
   const distinct=amount===1?prompt:prompt+'\nGenerate a distinct variation, variation '+(index+1)+' of '+amount+'.';
   const promptId=await submitOne(kind,distinct);
-  const job:GenerationJob={id:kind+'-'+Date.now()+'-'+index,kind,prompt:distinct,promptId,status:'queued',createdAt:Date.now(),outputs:[]};
+  const createdAt=Date.now(),job:GenerationJob={id:kind+'-'+promptId,kind,prompt:distinct,promptId,status:'queued',createdAt,outputs:[]};
   await saveGenerationJob(job);jobs.push(job);
  }
  return jobs;
