@@ -50,6 +50,7 @@ const definitions:ToolDefinition[]=[
  {type:'function',function:{name:'generate_image',description:'Generate one image through Pocket Buddy’s application-level media engine. Independent of the selected chat model.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
  {type:'function',function:{name:'generate_images',description:'Queue 1 to 20 images through the media engine. The selected chat model does not need native image generation.',parameters:{type:'object',properties:{prompt:{type:'string'},count:{type:'integer',minimum:1,maximum:20}},required:['prompt','count']}},requiresConfirmation:true},
  {type:'function',function:{name:'generate_video',description:'Generate a video through the configured media workflow. The selected chat model does not need native video generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_audio',description:'Generate audio through the configured audio workflow. The selected chat model does not need native audio generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
  {type:'function',function:{name:'generation_status',description:'Check the status and output filenames for a ComfyUI generation job.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}}},
  {type:'function',function:{name:'cancel_generation',description:'Cancel a pending ComfyUI generation job. Requires confirmation and only works before execution begins.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}},requiresConfirmation:true},
 ];
@@ -58,6 +59,7 @@ export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
  const result=definitions.filter(item=>{
   const name=item.function.name;
   if(['web_search','read_webpage'].includes(name))return config.useWebSearch&&!!config.searxngUrl.trim();
+  if(name==='generate_audio')return !!config.comfyUrl.trim()&&!!config.audioWorkflow.trim();
   if(['generate_image','generate_images','generate_video','generation_status','cancel_generation'].includes(name))return !!config.comfyUrl.trim();
   return true;
  });
@@ -79,6 +81,7 @@ export async function executeTool(name:string,args:Record<string,unknown>):Promi
   case 'generate_image':{const jobs=await submitMediaJobs('image',String(args.prompt||''),1);return 'Image generation queued. Job ID: '+jobs[0].promptId;}
   case 'generate_images':{const count=Math.max(1,Math.min(20,Number(args.count)||1));const jobs=await submitMediaJobs('image',String(args.prompt||''),count);return 'Queued '+jobs.length+' image jobs:\n'+jobs.map((job,index)=>(index+1)+'. '+job.promptId).join('\n');}
   case 'generate_video':{const jobs=await submitMediaJobs('video',String(args.prompt||''),1);return 'Video generation queued. Job ID: '+jobs[0].promptId;}
+  case 'generate_audio':{const jobs=await submitMediaJobs('audio',String(args.prompt||''),1);return 'Audio generation queued. Job ID: '+jobs[0].promptId;}
   case 'generation_status':return refreshMediaJob(String(args.prompt_id||''));
   case 'cancel_generation':await cancelMediaJob(String(args.prompt_id||''));return 'Generation job cancelled.';
   case 'github_search_repositories':return searchGitHubRepositories(String(args.query||''));

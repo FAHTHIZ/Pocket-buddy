@@ -6,7 +6,7 @@ const SETTINGS_KEY='pocket-buddy.settings.v1';
 const SERVICES={provider:'pocket-buddy.provider',github:'pocket-buddy.github',comfy:'pocket-buddy.comfy',voice:'pocket-buddy.voice',huggingFace:'pocket-buddy.huggingface'};
 const MCP_PREFIX='pocket-buddy.mcp.';
 const MCP_CONFIG_KEY='pocket-buddy.mcp-servers.v1';
-export const DEFAULT_CONFIG:AppConfig={mode:'local',baseUrl:'',model:'',temperature:0.7,maxToolTurns:6,useWebSearch:false,searxngUrl:'',comfyUrl:'',imageWorkflow:'',videoWorkflow:'',voiceId:'',voiceModel:'eleven_multilingual_v2',nCtx:4096,nGpuLayers:0,assistantName:'Pocket Buddy',systemPrompt:''};
+export const DEFAULT_CONFIG:AppConfig={mode:'local',baseUrl:'',model:'',temperature:0.7,maxToolTurns:6,useWebSearch:false,searxngUrl:'',comfyUrl:'',imageWorkflow:'',videoWorkflow:'',audioWorkflow:'',voiceId:'',voiceModel:'eleven_multilingual_v2',nCtx:4096,nGpuLayers:0,assistantName:'Pocket Buddy',systemPrompt:''};
 export async function loadConfig():Promise<AppConfig>{
  try{
   const raw=await AsyncStorage.getItem(SETTINGS_KEY);if(!raw)return DEFAULT_CONFIG;

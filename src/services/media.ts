@@ -26,15 +26,16 @@ async function request(path:string,init:RequestInit={}):Promise<any>{
   throw error;
  }finally{clearTimeout(timeout);}
 }
-async function submitOne(kind:'image'|'video',prompt:string):Promise<string>{
- const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:config.videoWorkflow;
+type MediaKind='image'|'video'|'audio';
+async function submitOne(kind:MediaKind,prompt:string):Promise<string>{
+ const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:kind==='video'?config.videoWorkflow:config.audioWorkflow;
  if(!json.trim())throw new Error('Add an API-format '+kind+' workflow in Settings. Put {{prompt}} in its positive prompt text input.');
  let workflow:any;try{workflow=JSON.parse(json);}catch{throw new Error('The saved ComfyUI workflow is not valid JSON.');}
  const result=await request('/prompt',{method:'POST',body:JSON.stringify({prompt:replacePrompt(workflow,prompt)})});
  if(!result.prompt_id)throw new Error(result.error?.message||'ComfyUI did not return a prompt ID. Check the workflow API export.');
  return String(result.prompt_id);
 }
-export async function submitMediaJobs(kind:'image'|'video',prompt:string,count=1):Promise<GenerationJob[]>{
+export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1):Promise<GenerationJob[]>{
  const amount=Math.max(1,Math.min(20,Math.floor(count)||1)),jobs:GenerationJob[]=[];
  for(let index=0;index<amount;index++){
   const distinct=amount===1?prompt:prompt+'\nGenerate a distinct variation, variation '+(index+1)+' of '+amount+'.';
@@ -72,7 +73,7 @@ export async function refreshMediaJob(promptId:string):Promise<string>{
  }
  const outputs:string[]=[];
  for(const node of Object.values(entry.outputs||{})as any[]){
-  for(const file of [...(node.images||[]),...(node.gifs||[]),...(node.videos||[])]){
+  for(const file of [...(node.images||[]),...(node.gifs||[]),...(node.videos||[]),...(node.audio||[]),...(node.audio_files||[])]){
    if(file.filename)outputs.push(JSON.stringify({filename:String(file.filename),subfolder:String(file.subfolder||''),type:String(file.type||'output')}));
   }
  }
@@ -92,7 +93,7 @@ export async function testMediaSetup():Promise<string[]>{
  const report:string[]=['ComfyUI API: reachable'];
  const system=stats?.system||{};
  if(system.ram_total)report.push('Server RAM: '+Math.round(Number(system.ram_total)/1073741824*10)/10+' GB');
- for(const [kind,raw] of [['Image',config.imageWorkflow],['Video',config.videoWorkflow]] as const){
+ for(const [kind,raw] of [['Image',config.imageWorkflow],['Video',config.videoWorkflow],['Audio',config.audioWorkflow]] as const){
   if(!raw.trim()){report.push(kind+' workflow: not configured');continue;}
   let workflow:any;
   try{workflow=JSON.parse(raw);}catch{report.push(kind+' workflow: invalid JSON');continue;}

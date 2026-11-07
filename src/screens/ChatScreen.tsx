@@ -7,7 +7,7 @@ const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f
 type Props={
  messages:ChatMessage[];onSend:(text:string)=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
- onQuickAction:(action:'image'|'video'|'models'|'connectors'|'gallery')=>void;
+ onQuickAction:(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
  needsSetup:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
 };
@@ -31,7 +31,7 @@ export default function ChatScreen(p:Props){
   catch(error){setConnectError(error instanceof Error?error.message:String(error));}
   finally{setConnecting(false);}
  };
- const quick=(action:'image'|'video'|'models'|'connectors'|'gallery')=>{setActions(false);if(action==='image')setDraft('Create an image of ');else if(action==='video')setDraft('Create a video of ');else p.onQuickAction(action);};
+ const quick=(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>{setActions(false);if(action==='image')setDraft('Create an image of ');else if(action==='video')setDraft('Create a video of ');else if(action==='audio')setDraft('Generate audio of ');else p.onQuickAction(action);};
  const empty=p.messages.length===0&&!p.liveText;
  return <KeyboardAvoidingView style={s.root} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={0}>
   <View style={s.topbar}>
@@ -105,6 +105,7 @@ export default function ChatScreen(p:Props){
      <Text style={s.sheetTitle}>Add to your session</Text>
      <Action label="Generate image" detail="Use the built-in image workflow" icon="▧" onPress={()=>quick('image')}/>
      <Action label="Generate video" detail="Create a video through your media engine" icon="▶" onPress={()=>quick('video')}/>
+     <Action label="Generate audio" detail="Create music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
      <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')}/>
      <Action label="Connectors" detail="GitHub, MCP and external tools" icon="⌘" onPress={()=>quick('connectors')}/>
      <Action label="Media library" detail="Review generation jobs" icon="▤" onPress={()=>quick('gallery')}/>

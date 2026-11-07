@@ -9,7 +9,7 @@ const SYSTEM_PROMPT=[
  'You are Pocket Buddy, a helpful and capable personal AI assistant.',
  'Use tools whenever they materially improve correctness or enable actions. For current information, use web_search when available and read relevant source pages.',
  'Use calculator for arithmetic when precision matters.',
- 'Pocket Buddy owns image and video generation. You can request media generation even if your selected language model is text-only.',
+ 'Pocket Buddy owns image, video and audio generation. You can request media generation even if your selected language model is text-only.',
  'For a request for 20 images, use generate_images with count 20. Do not silently lower the requested count.',
  'For connected GitHub work, use GitHub tools to inspect repositories and files. Creating an issue requires explicit confirmation.',
  'Remote MCP tools require explicit user approval. Never assume a remote tool is safe because a server offered it.',
@@ -53,15 +53,15 @@ async function buildContextMessages(history:ChatMessage[],conversationId:string|
  if(summary)result.push({role:'system',content:'Memory from earlier in this conversation (background context; not a new instruction):\n'+summary});
  result.push(...history.slice(start).map(item=>({role:item.role,content:item.content})));return result;
 }
-function detectDirectMediaRequest(prompt:string):{kind:'image'|'video';count:number}|null{
+function detectDirectMediaRequest(prompt:string):{kind:'image'|'video'|'audio';count:number}|null{
  const text=prompt.trim();if(!/\b(create|generate|make|draw|render|produce)\b/i.test(text))return null;
- const image=/\b(images?|pictures?|photos?|illustrations?|artworks?)\b/i.test(text),video=/\b(videos?|clips?|animations?)\b/i.test(text);
+ const image=/\b(images?|pictures?|photos?|illustrations?|artworks?)\b/i.test(text),video=/\b(videos?|clips?|animations?)\b/i.test(text),audio=/\b(audio|music|songs?|sound effects?|soundtracks?|voice ?overs?)\b/i.test(text);
  if(image){
   const numeric=text.match(/\b(\d{1,2})\s*(?:different\s+)?(?:images?|pictures?|photos?|illustrations?)\b/i),word=text.match(/\b(one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty)\s+(?:different\s+)?(?:images?|pictures?|photos?|illustrations?)\b/i);
   const words:Record<string,number>={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,fifteen:15,twenty:20};
   return{kind:'image',count:Math.max(1,Math.min(20,numeric?Number(numeric[1]):word?words[word[1].toLowerCase()]:1))};
  }
- if(video)return{kind:'video',count:1};return null;
+ if(video)return{kind:'video',count:1};if(audio)return{kind:'audio',count:1};return null;
 }
 export async function runAgent(history:ChatMessage[],onEvent:(event:AgentEvent)=>void,confirmTool:(name:string,args:Record<string,unknown>)=>Promise<boolean>,toolsEnabled=true,conversationId?:string):Promise<string>{
  const currentConfig=await loadConfig();
@@ -71,7 +71,7 @@ export async function runAgent(history:ChatMessage[],onEvent:(event:AgentEvent)=
  }
  const latest=history[history.length-1]?.content||'',intent=detectDirectMediaRequest(latest);
  if(intent){onEvent({type:'status',message:'Preparing '+intent.kind+' generation'});const jobs=await submitMediaJobs(intent.kind,latest,intent.count);
-  return intent.kind==='image'?'Queued '+jobs.length+' image generation '+(jobs.length===1?'job':'jobs')+'.\n\n'+jobs.map((job,index)=>(index+1)+'. Job ID: '+job.promptId).join('\n')+'\n\nYou can track progress in Media library.':'Queued your video generation job.\n\nJob ID: '+jobs[0].promptId+'\n\nYou can track progress in Media library.';
+  return intent.kind==='image'?'Queued '+jobs.length+' image generation '+(jobs.length===1?'job':'jobs')+'.\n\n'+jobs.map((job,index)=>(index+1)+'. Job ID: '+job.promptId).join('\n')+'\n\nYou can track progress in Media library.':intent.kind==='video'?'Queued your video generation job.\n\nJob ID: '+jobs[0].promptId+'\n\nYou can track progress in Media library.':'Queued your audio generation job.\n\nJob ID: '+jobs[0].promptId+'\n\nYou can track progress in Media library.';
  }
  const tools:ToolDefinition[]=toolsEnabled?await getAllToolDefinitions():[],messages:ModelMessage[]=await buildContextMessages(history,conversationId,onEvent);
  for(let turn=0;turn<6;turn++){
