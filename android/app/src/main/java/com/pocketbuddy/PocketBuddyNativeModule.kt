@@ -3,6 +3,8 @@ package com.pocketbuddy
 import android.app.ActivityManager
 import android.app.DownloadManager
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -189,6 +191,17 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
         speechFile = null
         speechPromise?.resolve("stopped")
         speechPromise = null
+    }
+
+    @ReactMethod
+    fun copyToClipboard(text: String, promise: Promise) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Pocket Buddy", text.take(100000)))
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("CLIPBOARD_FAILED", error)
+        }
     }
 
     @ReactMethod
