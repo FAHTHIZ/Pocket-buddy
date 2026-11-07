@@ -18,6 +18,7 @@ export default function ChatScreen(p:Props){
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
+ useEffect(()=>{if(editingId&&!p.messages.some(message=>message.id===editingId)){setEditingId(null);setDraft('');}},[p.messages,editingId]);
  const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
  const connect=async()=>{
   if(!providerUrl.trim()){setConnectError('Paste your provider URL first.');return;}

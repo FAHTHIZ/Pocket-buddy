@@ -31,7 +31,7 @@ export default function SettingsScreen({onBack,onSaved}:Props){
    </>:<View style={s.info}>
     <Text style={s.infoTitle}>Local model mode</Text><Text style={s.helper}>Install a GGUF model from Models. Pocket Buddy uses llama.cpp through llama.rn. Runtime memory depends on model, context and quantization.</Text>
     <Text style={s.label}>Context window</Text><View style={s.choiceRow}>{[2048,4096,8192,16384].map(value=><Pressable key={value} onPress={()=>patch({nCtx:value})} style={[s.choice,config.nCtx===value&&s.choiceActive]}><Text style={[s.choiceText,config.nCtx===value&&s.choiceTextActive]}>{(value/1024)+'K'}</Text></Pressable>)}</View>
-    <Text style={s.helper}>Larger context uses more RAM. Start at 4K on a modest phone and increase only if stable.</Text>
+    <Text style={s.helper}>Larger context uses more RAM. This runtime allocation cannot exceed a model's trained context limit or bypass its positional-encoding settings. Start at 4K on a modest phone and increase only if stable.</Text>
     <Text style={s.label}>GPU layer offload</Text><View style={s.choiceRow}>{[0,16,32,64,99].map(value=><Pressable key={value} onPress={()=>patch({nGpuLayers:value})} style={[s.choice,config.nGpuLayers===value&&s.choiceActive]}><Text style={[s.choiceText,config.nGpuLayers===value&&s.choiceTextActive]}>{value===0?'CPU':value===99?'Max':String(value)}</Text></Pressable>)}</View>
     <Text style={s.helper}>Android GPU acceleration is device and quantization dependent. llama.rn OpenCL support is limited to supported Qualcomm Adreno devices and Q4_0/Q6_K formats. A requested offload level does not guarantee it activated.</Text>
    </View>}
