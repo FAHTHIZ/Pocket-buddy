@@ -1,7 +1,7 @@
 import React,{useEffect,useState}from'react';
 import{ActivityIndicator,Alert,FlatList,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import{downloadModel,getDeviceProfile,getModelFiles,listInstalledModels,registerInstalledModel,type HubFile,type HubModel}from'../services/modelLibrary';
+import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,type HubFile,type HubModel}from'../services/modelLibrary';
 import{getLocalRuntimeStatus,loadLocalModel}from'../services/llm';
 import type{DeviceProfile,LocalModelRecord}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
