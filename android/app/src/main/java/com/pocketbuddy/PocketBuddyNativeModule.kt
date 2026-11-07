@@ -118,8 +118,24 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
                 when (status) {
                     DownloadManager.STATUS_SUCCESSFUL -> {
                         result.putString("status", "complete")
-                        @Suppress("DEPRECATION")
-                        result.putString("localPath", it.getString(it.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_FILENAME)))
+                        // Use the supported download URI API instead of the deprecated
+                        // COLUMN_LOCAL_FILENAME, which can be blocked on modern Android.
+                        val localUri = manager.getUriForDownloadedFile(downloadId.toLong())
+                        val modelDirectory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.canonicalFile
+                        val localFile = localUri
+                            ?.takeIf { uri -> uri.scheme == "file" && !uri.path.isNullOrBlank() }
+                            ?.path
+                            ?.let { path -> File(path).canonicalFile }
+                        if (modelDirectory == null || localFile == null ||
+                            localFile.parentFile?.canonicalFile != modelDirectory || !localFile.isFile
+                        ) {
+                            promise.reject(
+                                "DOWNLOAD_PATH_UNAVAILABLE",
+                                "Android completed the download but did not expose a readable model file in Pocket Buddy's private model directory."
+                            )
+                            return
+                        }
+                        result.putString("localPath", localFile.absolutePath)
                     }
                     DownloadManager.STATUS_FAILED -> {
                         result.putString("status", "failed")
