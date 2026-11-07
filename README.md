@@ -1,3 +1,7 @@
+> **[Download Pocket Buddy for Android (ARM64 APK)](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
+>
+> This link always points to the latest successful Android validation release. Builds are signed with the CI test key, not a Play Store production key. A new APK replaces the download only after the full validation workflow passes.
+
 # Pocket Buddy
 
 **One conversation. Your models. Your tools. Your media.**
@@ -107,14 +111,6 @@ A provider that does not expose `/models` can still be used by entering its exac
 
 The agent caps tool rounds and the number of calls per round. Older turns are summarized when the configured context budget is exceeded. The context allocator reserves separate space for the system prompt, summary and recent turns. Tool results and retrieved content are untrusted data.
 
-## One-link Android install
-
-The latest standalone ARM64 Android test APK is published at this stable address after the Android validation workflow succeeds. Unlike a React Native debug APK, this release APK includes the bundled JavaScript and does not need Metro running:
-
-**[Download Pocket Buddy for Android](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
-
-Android will ask you to confirm installation of an APK downloaded outside the Play Store. This is a CI test-signed release build, not a production Play Store signing identity. CI retains the test key in a repository-scoped Actions cache so test builds can update one another; maintainers must use a private keystore for production distribution. The workflow installs and launches an x86_64 release build in an Android emulator before publishing the ARM64 download.
-
 ## Media generation
 
 A text-only LLM does not need native image/video generation. Pocket Buddy's application layer can directly route explicit generation requests and submit them to ComfyUI. The configured API workflow, model weights, custom nodes, compute capacity and provider limits determine what can actually be generated.
@@ -129,8 +125,8 @@ Assistant messages have a **Read aloud** control. It uses the best matching voic
 
 - Real-device installation and inference validation is still required.
 - Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
-- Model downloads use Android DownloadManager, but recovery after process death and file-integrity verification need device testing.
-- ComfyUI image, video and audio jobs are persisted and can be checked. Audio requires a separately configured audio workflow and compatible nodes/model weights.  Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
+- Model downloads use Android DownloadManager and validate the private destination path plus a non-empty file, but they do not yet verify the Hugging Face SHA-256 checksum. Recovery after process death and real-device download behaviour still need device testing.
+- ComfyUI image, video and audio jobs are persisted and can be checked. Audio requires a separately configured audio workflow and compatible nodes/model weights. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job. Image previews can send the saved bearer token in-app; opening token-protected video/audio files in external apps is not supported yet.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
 - Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.

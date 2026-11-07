@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useState}from'react';
+import React,{useCallback,useEffect,useRef,useState}from'react';
 import{Alert,Image,Linking,Pressable,ScrollView,StyleSheet,Text,View}from'react-native';
 import type{GenerationJob}from'../types';
 import{cancelMediaJob,readMediaJobs,refreshMediaJob}from'../services/media';
@@ -9,16 +9,26 @@ type Props={onBack:()=>void};
 type Output={filename:string;subfolder:string;type:string};
 export default function MediaScreen({onBack}:Props){
  const[jobs,setJobs]=useState<GenerationJob[]>([]),[busy,setBusy]=useState(false),[base,setBase]=useState(''),[comfyToken,setComfyToken]=useState('');
+ const reloadLock=useRef(false),mounted=useRef(true);
  const reload=useCallback(async()=>{
-  const items=await readMediaJobs();const [config,token]=await Promise.all([loadConfig(),getComfyToken()]);setBase(config.comfyUrl.replace(/\/+$/,''));setComfyToken(token);
-  const active=items.filter(item=>item.status==='queued'||item.status==='running');
-  if(active.length){await Promise.all(active.map(item=>refreshMediaJob(item.promptId).catch(()=>'')));}
-  setJobs(await readMediaJobs());
+  if(reloadLock.current)return;
+  reloadLock.current=true;
+  try{
+   const items=await readMediaJobs();
+   const [config,token]=await Promise.all([loadConfig(),getComfyToken()]);
+   if(!mounted.current)return;
+   setBase(config.comfyUrl.replace(/\\/+$/,''));setComfyToken(token);
+   const active=items.filter(item=>item.status==='queued'||item.status==='running');
+   if(active.length)await Promise.all(active.map(item=>refreshMediaJob(item.promptId).catch(()=>'')));
+   const latest=await readMediaJobs();
+   if(mounted.current)setJobs(latest);
+  }finally{reloadLock.current=false;}
  },[]);
  useEffect(()=>{
+  mounted.current=true;
   reload().catch(()=>{});
   const timer=setInterval(()=>reload().catch(()=>{}),8000);
-  return()=>clearInterval(timer);
+  return()=>{mounted.current=false;clearInterval(timer);};
  },[reload]);
  const refresh=async(job:GenerationJob)=>{
   try{setBusy(true);await refreshMediaJob(job.promptId);await reload();}
@@ -40,8 +50,12 @@ export default function MediaScreen({onBack}:Props){
  };
  const openOutput=(raw:string)=>{
   const url=outputUrl(raw);if(!url)return;
+  if(comfyToken){
+   Alert.alert('Protected ComfyUI output','Pocket Buddy can use your saved token for in-app image previews. Android browser links do not receive that token, so opening protected video or audio files in another app is not supported yet.');
+   return;
+  }
   Linking.openURL(url).catch(()=>Alert.alert('Could not open output','Check that your ComfyUI server is reachable.'));
- };
+ };;
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backText}>‹</Text></Pressable><Text style={s.title}>Media library</Text><Pressable onPress={()=>reload()}><Text style={s.refresh}>Refresh</Text></Pressable></View>
   <View style={s.intro}><Text style={s.heading}>Your creations</Text><Text style={s.sub}>Image, video and audio jobs submitted from your conversations appear here. Status refreshes automatically while this screen is open.</Text></View>
