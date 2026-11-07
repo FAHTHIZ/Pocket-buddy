@@ -44,8 +44,8 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
   // GGUF weights and inference buffers are native allocations; Android's Java memoryClass is not a useful cap for them.
   const safeRamBudget=device?Math.max(0,(device.availableRamMb||0)*0.68):0;
   if(need&&ram&&estimatedRuntimeMb>safeRamBudget)warnings.push('Rough fit estimate: this model may exceed the memory currently available to the phone after runtime and context overhead. Close other apps or choose a smaller model/context. This is a heuristic, not a guarantee.');
-  const start=async()=>{try{setBusy(true);setDownloading(file.name);setProgress(0);const uri=await downloadModel(modelId,file.name,setProgress,undefined,file.size),modelName=displayName||modelId.split('/').pop()||'Local model';
-   const record:LocalModelRecord={id:modelId+'::'+file.name,modelId,name:modelName,fileName:file.name,path:uri,size:file.size,addedAt:Date.now()};
+  const start=async()=>{try{setBusy(true);setDownloading(file.name);setProgress(0);const uri=await downloadModel(modelId,file.name,setProgress,undefined,file.size,file.sha256),modelName=displayName||modelId.split('/').pop()||'Local model';
+   const record:LocalModelRecord={id:modelId+'::'+file.name,modelId,name:modelName,fileName:file.name,path:uri,size:file.size,sha256:file.sha256,addedAt:Date.now()};
    setInstalled(await registerInstalledModel(record));await AsyncStorage.setItem('pocket-buddy.local-model-uri',uri);await AsyncStorage.setItem('pocket-buddy.active-model',modelName);
    await loadLocalModel(uri);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
   }catch(e){if(!(e instanceof ModelDownloadCancelledError))Alert.alert('Could not install model',e instanceof Error?e.message:String(e));}finally{setBusy(false);setDownloading('');}};

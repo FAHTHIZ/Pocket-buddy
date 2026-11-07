@@ -127,7 +127,7 @@ Assistant messages have a **Read aloud** control. It uses the best matching voic
 
 - Real-device installation and inference validation is still required.
 - Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
-- Model downloads use Android DownloadManager and validate the private destination path plus a non-empty file, but they do not yet verify the Hugging Face SHA-256 checksum. Recovery after process death and real-device download behaviour still need device testing.
+- Model downloads use Android DownloadManager, validate the private destination path and verify the Hugging Face LFS SHA-256 checksum when the Hub exposes one. Files without published checksum metadata receive path/size checks only. Recovery after process death and real-device download behaviour still need device testing.
 - ComfyUI image, video and audio jobs are persisted and can be checked. Audio requires a separately configured audio workflow and compatible nodes/model weights. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job. Image previews can send the saved bearer token in-app; opening token-protected video/audio files in external apps is not supported yet.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.

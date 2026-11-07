@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import{NativeModules}from'react-native';
 import{getHuggingFaceToken}from'./storage';
 import type{DeviceProfile,LocalBenchmark,LocalModelRecord,NativeDownloadStatus,PendingModelDownload,PendingModelDownloadState}from'../types';
-type NativeDownload={startDownload(url:string,fileName:string,headers:Record<string,string>):Promise<{downloadId:string}>;getDownloadStatus(id:string):Promise<NativeDownloadStatus>;cancelDownload(id:string):Promise<boolean>;getDeviceProfile():Promise<DeviceProfile>;deleteModelFile(path:string):Promise<boolean>};
+type NativeDownload={startDownload(url:string,fileName:string,headers:Record<string,string>):Promise<{downloadId:string}>;getDownloadStatus(id:string):Promise<NativeDownloadStatus>;cancelDownload(id:string):Promise<boolean>;getDeviceProfile():Promise<DeviceProfile>;deleteModelFile(path:string):Promise<boolean>;verifyModelSha256(path:string,sha256:string):Promise<boolean>};
 const Native=NativeModules.PocketBuddyNative as NativeDownload;
 const LIBRARY_KEY='pocket-buddy.installed-models.v1';
 const DOWNLOADS_KEY='pocket-buddy.pending-model-downloads.v1';
@@ -15,7 +15,7 @@ export async function saveModelBenchmark(path:string,result:LocalBenchmark):Prom
  value[path]=result;await AsyncStorage.setItem(BENCHMARK_KEY,JSON.stringify(value));
 }
 export type HubModel={id:string;downloads:number;likes:number};
-export type HubFile={name:string;size?:number};
+export type HubFile={name:string;size?:number;sha256?:string};
 export async function getDeviceProfile():Promise<DeviceProfile>{if(!Native?.getDeviceProfile)throw new Error('Android device profile is unavailable. Rebuild the app.');return Native.getDeviceProfile();}
 async function hfHeaders():Promise<Record<string,string>>{const token=await getHuggingFaceToken();return token?{Authorization:'Bearer '+token}:{};}
 export async function searchHuggingFaceModels(query:string):Promise<HubModel[]>{
@@ -27,7 +27,11 @@ export async function searchHuggingFaceModels(query:string):Promise<HubModel[]>{
 export async function getModelFiles(id:string):Promise<HubFile[]>{
  const encodedId=id.split('/').map(encodeURIComponent).join('/'),response=await fetch('https://huggingface.co/api/models/'+encodedId,{headers:{Accept:'application/json',...await hfHeaders()}});
  if(!response.ok)throw new Error('Could not load model files (HTTP '+response.status+'). For gated models, add a Hugging Face read token in Settings.');
- const data=await response.json();return(data.siblings||[]).map((item:any)=>({name:item.rfilename,size:item.lfs?.size||item.size})).filter((item:HubFile)=>item.name.toLowerCase().endsWith('.gguf'));
+ const data=await response.json();return(data.siblings||[]).map((item:any)=>{
+  const rawHash=typeof item.lfs?.oid==='string'?item.lfs.oid:typeof item.sha256==='string'?item.sha256:'';
+  const normalizedHash=rawHash.replace(/^sha256:/i,'').toLowerCase();
+  return{name:item.rfilename,size:item.lfs?.size||item.size,sha256:/^[a-f0-9]{64}$/.test(normalizedHash)?normalizedHash:undefined};
+ }).filter((item:HubFile)=>item.name.toLowerCase().endsWith('.gguf'));
 }
 export async function listInstalledModels():Promise<LocalModelRecord[]>{
  try{const value=JSON.parse((await AsyncStorage.getItem(LIBRARY_KEY))||'[]');if(!Array.isArray(value))return [];
@@ -83,7 +87,17 @@ export async function refreshPendingModelDownloads():Promise<PendingModelDownloa
    const state=await Native.getDownloadStatus(item.downloadId);
    if(state.status==='complete'){
     if(state.localPath){
-     await registerInstalledModel({id:item.modelId+'::'+item.fileName,modelId:item.modelId,name:item.name,fileName:item.fileName,path:state.localPath,size:item.size,addedAt:item.startedAt});
+     if(item.sha256){
+      if(!Native?.verifyModelSha256)throw new Error('SHA-256 verification is unavailable in this build.');
+      const valid=await Native.verifyModelSha256(state.localPath,item.sha256);
+      if(!valid){
+       await Native.deleteModelFile(state.localPath);
+       results.push({...item,status:'failed',progress:1,reason:-1});
+       await forgetPendingModelDownload(item.downloadId);
+       continue;
+      }
+     }
+     await registerInstalledModel({id:item.modelId+'::'+item.fileName,modelId:item.modelId,name:item.name,fileName:item.fileName,path:state.localPath,size:item.size,sha256:item.sha256,addedAt:item.startedAt});
     }else{
      results.push({...item,status:'failed',progress:1,reason:0});
     }
@@ -108,14 +122,14 @@ function uniqueDownloadName(id:string,file:string):string{
  const prefix=id.replace(/[^A-Za-z0-9._-]/g,'_').slice(0,48)||'model',digest=(hash>>>0).toString(16).padStart(8,'0'),leaf=file.split('/').pop()||'model.gguf';
  return prefix+'-'+digest+'-'+leaf.slice(-Math.max(24,180-prefix.length-digest.length-2));
 }
-export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number):Promise<string>{
+export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number,sha256?:string):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
  const encodedId=id.split('/').map(encodeURIComponent).join('/'),encodedFile=file.split('/').map(encodeURIComponent).join('/'),url='https://huggingface.co/'+encodedId+'/resolve/main/'+encodedFile;
  const result=await Native.startDownload(url,uniqueDownloadName(id,file),await hfHeaders()),downloadId=result.downloadId;
  activeDownloadIds.add(downloadId);
  try{
   onId?.(downloadId);
-  await savePendingModelDownload({downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,startedAt:Date.now()});
+  await savePendingModelDownload({downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,sha256,startedAt:Date.now()});
   for(let attempt=0;attempt<6*60*60;attempt++){
    if(cancelledDownloadIds.has(downloadId))throw new ModelDownloadCancelledError();
    let state:NativeDownloadStatus;
@@ -125,7 +139,16 @@ export async function downloadModel(id:string,file:string,onProgress:(value:numb
    onProgress(Math.round(Math.max(0,Math.min(1,state.progress))*100));
    if(state.status==='complete'){
     if(state.localPath){
-     await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,addedAt:Date.now()});
+     if(sha256){
+      if(!Native?.verifyModelSha256)throw new Error('SHA-256 verification is unavailable in this build.');
+      const valid=await Native.verifyModelSha256(state.localPath,sha256);
+      if(!valid){
+       await Native.deleteModelFile(state.localPath);
+       await forgetPendingModelDownload(downloadId);
+       throw new Error('The downloaded model failed SHA-256 verification and was removed. Please try the download again.');
+      }
+     }
+     await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,sha256,addedAt:Date.now()});
      await forgetPendingModelDownload(downloadId);return state.localPath;
     }
     throw new Error('Android reports the download finished but did not return a readable model file path.');

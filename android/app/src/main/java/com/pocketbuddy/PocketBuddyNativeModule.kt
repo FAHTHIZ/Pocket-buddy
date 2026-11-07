@@ -22,6 +22,8 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Locale
@@ -177,6 +179,43 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
             promise.resolve(true)
         } catch (error: Exception) {
             promise.reject("MODEL_DELETE_FAILED", error)
+        }
+    }
+
+    @ReactMethod
+    fun verifyModelSha256(path: String, expectedSha256: String, promise: Promise) {
+        try {
+            val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.canonicalFile
+                ?: throw IllegalStateException("The private model directory is unavailable.")
+            val target = File(path).canonicalFile
+            val expected = expectedSha256.trim().removePrefix("sha256:").lowercase(Locale.ROOT)
+            if (!expected.matches(Regex("^[a-f0-9]{64}$"))) {
+                promise.reject("INVALID_MODEL_HASH", "A valid SHA-256 checksum is required.")
+                return
+            }
+            if (target.parentFile?.canonicalFile != directory ||
+                !target.isFile ||
+                !target.name.endsWith(".gguf", ignoreCase = true)
+            ) {
+                promise.reject("INVALID_MODEL_PATH", "Only GGUF files in Pocket Buddy's private model directory can be verified.")
+                return
+            }
+            val digest = MessageDigest.getInstance("SHA-256")
+            FileInputStream(target).use { input ->
+                val buffer = ByteArray(1024 * 1024)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    if (count > 0) digest.update(buffer, 0, count)
+                }
+            }
+            val actual = digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+            promise.resolve(MessageDigest.isEqual(
+                actual.toByteArray(Charsets.US_ASCII),
+                expected.toByteArray(Charsets.US_ASCII)
+            ))
+        } catch (error: Exception) {
+            promise.reject("MODEL_HASH_FAILED", error)
         }
     }
 
