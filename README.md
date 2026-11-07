@@ -30,7 +30,7 @@ Pocket Buddy is an Android-first personal AI workspace. Its default experience i
 | Web | User-configured SearXNG; public HTTPS webpage reader |
 | GitHub | User token, repository search, file reading, open issues and confirmation-gated issue creation |
 | MCP | Streamable HTTP initialization, tool listing and calls; remote calls require approval |
-| Media | ComfyUI API workflows for image/video generation and persisted job tracking |
+| Media | ComfyUI API workflows for image, video and audio generation with persisted job tracking |
 | Android device data | Native profile: RAM, available storage, SoC, SDK and thermal status |
 
 ## Setup
@@ -105,7 +105,7 @@ A provider that does not expose `/models` can still be used by entering its exac
 - github_create_issue — write operation with confirmation.
 - MCP tools — discovered from connected servers; remote tool calls require confirmation.
 
-The agent caps tool rounds and the number of calls per round. Older turns are summarized when the configured context budget is exceeded. Tool results and retrieved content are untrusted data.
+The agent caps tool rounds and the number of calls per round. Older turns are summarized when the configured context budget is exceeded. The context allocator reserves separate space for the system prompt, summary and recent turns. Tool results and retrieved content are untrusted data.
 
 ## One-link Android install
 
@@ -130,12 +130,12 @@ Assistant messages have a **Read aloud** control. It uses the best matching voic
 - Real-device installation and inference validation is still required.
 - Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
 - Model downloads use Android DownloadManager, but recovery after process death and file-integrity verification need device testing.
-- ComfyUI jobs are persisted and can be checked. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
+- ComfyUI image, video and audio jobs are persisted and can be checked. Audio requires a separately configured audio workflow and compatible nodes/model weights.  Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job.
 - Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
 - MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
 - Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.
 - Older turns are summarized when context budget is exceeded. The summary is a compact memory aid, not a vector database or a guarantee that every earlier detail is retained.
-- Offline speech recognition and standalone audio generation are not wired up yet.
+- Speech input uses the installed Android recognition service with an offline preference; actual offline support depends on that provider and language pack.
 - No API key, model weight, workflow or custom node is bundled.
 
 ## Privacy and security

@@ -13,7 +13,7 @@ The client does not operate a hosted inference backend. Users configure local mo
 3. Agent runtime: normalized tool schemas, bounded function-call loop, confirmation policy and direct media intent router.
 4. Capability registry: built-in deterministic tools plus user-connected MCP tools.
 5. Model adapters: llama.cpp via llama.rn or OpenAI-compatible chat completion endpoints.
-6. Media adapters: ComfyUI workflow queue for image/video jobs.
+6. Media adapters: ComfyUI workflow queue for image/video/audio jobs.
 7. Platform services: Android DownloadManager, hardware profile, thermal status, SQLite and secure credential store.
 
 ## Capability independence
@@ -24,7 +24,8 @@ The selected language model is not the capability host. Pocket Buddy registers i
 |---|---|
 | Text conversation | Selected LLM adapter |
 | Explicit image-generation request | App intent router → ComfyUI image workflow |
-| Explicit video-generation request | App intent router → ComfyUI video workflow |
+| Explicit video-generation request | App intent router → ComfyUI video workflow
+| Explicit audio-generation request | App intent router → ComfyUI audio workflow |
 | Model-requested media operation | LLM tool call → media adapter |
 | Web search | Configured SearXNG |
 | Webpage reading | HTTPS reader |

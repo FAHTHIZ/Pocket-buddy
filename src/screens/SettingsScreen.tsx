@@ -50,6 +50,8 @@ export default function SettingsScreen({onBack,onSaved}:Props){
    <Text style={s.label}>Audio workflow · API JSON</Text><TextInput value={config.audioWorkflow} onChangeText={v=>patch({audioWorkflow:v})} placeholder={'Paste audio API workflow JSON. Use {{prompt}} in the text/prompt input.'} placeholderTextColor="#777" multiline style={[s.input,s.multiline]}/>
    <Text style={s.helper}>Generation depends on the configured workflow, model weights, nodes and available compute. ComfyUI runs separately; Pocket Buddy queues jobs and tracks status.</Text>
    <Pressable style={s.testButton} onPress={checkMedia} disabled={testing}><Text style={s.testButtonText}>{testing?'Checking server…':'Test media server & workflows'}</Text></Pressable>
+   <Text style={[s.section,{marginTop:25}]}>VOICE INPUT</Text>
+   <Text style={s.helper}>Use the microphone button in chat to dictate a message. Pocket Buddy requests offline recognition from Android where supported, but offline availability and language support depend on the speech service installed on this device. Review that provider's privacy settings.</Text>
    <Text style={[s.section,{marginTop:25}]}>VOICE OUTPUT</Text><Text style={s.label}>Neural voice API key (optional)</Text>
    <TextInput value={voiceKey} onChangeText={setVoiceKey} placeholder="Paste your voice provider API key" placeholderTextColor="#777" secureTextEntry style={s.input}/>
    <Text style={s.label}>Voice ID</Text><TextInput value={config.voiceId} onChangeText={v=>patch({voiceId:v})} placeholder="Your provider voice ID" placeholderTextColor="#777" autoCapitalize="none" style={s.input}/>

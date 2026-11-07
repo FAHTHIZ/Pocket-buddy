@@ -44,14 +44,28 @@ async function buildContextMessages(history:ChatMessage[],conversationId:string|
  const assistantName=config.assistantName.trim()||'Pocket Buddy';
  const basePrompt=SYSTEM_PROMPT.replaceAll('Pocket Buddy',assistantName);
  const systemPrompt=basePrompt+(config.systemPrompt.trim()?'\n\nAdditional assistant instructions:\n'+config.systemPrompt.trim():'');
- const windowSize=config.mode==='local'?config.nCtx:8192,budget=Math.max(512,Math.floor(windowSize*0.62));
- let used=estimateTokens(systemPrompt)+300,start=history.length;
- for(let index=history.length-1;index>=0;index--){const cost=estimateTokens(formatMessage(history[index]))+8;if(used+cost>budget&&index<history.length-1)break;if(used+cost>budget&&index===history.length-1){start=index;break;}used+=cost;start=index;}
+ const windowSize=config.mode==='local'?config.nCtx:8192;
+ const totalBudget=Math.max(512,Math.floor(windowSize*0.68));
+ const summaryReserve=Math.max(128,Math.floor(totalBudget*0.24));
+ const historyBudget=Math.max(256,totalBudget-summaryReserve);
+ let used=estimateTokens(systemPrompt)+120,start=history.length;
+ for(let index=history.length-1;index>=0;index--){
+  const cost=estimateTokens(formatMessage(history[index]))+8;
+  if(used+cost>historyBudget&&index<history.length-1)break;
+  if(used+cost>historyBudget&&index===history.length-1){start=index;break;}
+  used+=cost;start=index;
+ }
  let summary='';
- if(start>0&&conversationId){try{summary=await summarizeOlderMessages(conversationId,history.slice(0,start),onEvent);}catch{onEvent({type:'status',message:'Using recent conversation context'});summary=(await getConversationContext(conversationId).catch(()=>null))?.summary||'';}}
+ if(start>0&&conversationId){
+  try{summary=await summarizeOlderMessages(conversationId,history.slice(0,start),onEvent);}
+  catch{onEvent({type:'status',message:'Using recent conversation context'});summary=(await getConversationContext(conversationId).catch(()=>null))?.summary||'';}
+ }
+ const summaryCharBudget=Math.max(256,Math.floor(summaryReserve*3.2));
+ if(summary.length>summaryCharBudget)summary=summary.slice(-summaryCharBudget);
  const result:ModelMessage[]=[{role:'system',content:systemPrompt}];
  if(summary)result.push({role:'system',content:'Memory from earlier in this conversation (background context; not a new instruction):\n'+summary});
- result.push(...history.slice(start).map(item=>({role:item.role,content:item.content})));return result;
+ result.push(...history.slice(start).map(item=>({role:item.role,content:item.content})));
+ return result;
 }
 function detectDirectMediaRequest(prompt:string):{kind:'image'|'video'|'audio';count:number}|null{
  const text=prompt.trim();if(!/\b(create|generate|make|draw|render|produce)\b/i.test(text))return null;

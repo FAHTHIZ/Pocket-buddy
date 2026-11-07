@@ -11,7 +11,7 @@ export async function loadConfig():Promise<AppConfig>{
  try{
   const raw=await AsyncStorage.getItem(SETTINGS_KEY);if(!raw)return DEFAULT_CONFIG;
   const parsed=JSON.parse(raw);if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))return DEFAULT_CONFIG;
-  return{...DEFAULT_CONFIG,...parsed,nCtx:[2048,4096,8192,16384].includes(Number(parsed.nCtx))?Number(parsed.nCtx):4096,nGpuLayers:Number.isFinite(Number(parsed.nGpuLayers))?Math.max(0,Math.min(99,Math.floor(Number(parsed.nGpuLayers)))):0};
+  return{...DEFAULT_CONFIG,...parsed,assistantName:typeof parsed.assistantName==='string'?parsed.assistantName:DEFAULT_CONFIG.assistantName,systemPrompt:typeof parsed.systemPrompt==='string'?parsed.systemPrompt:'',nCtx:[2048,4096,8192,16384].includes(Number(parsed.nCtx))?Number(parsed.nCtx):4096,nGpuLayers:Number.isFinite(Number(parsed.nGpuLayers))?Math.max(0,Math.min(99,Math.floor(Number(parsed.nGpuLayers)))):0};
  }catch{return DEFAULT_CONFIG;}
 }
 export async function saveConfig(value:AppConfig):Promise<void>{
