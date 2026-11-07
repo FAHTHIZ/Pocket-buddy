@@ -39,7 +39,7 @@ export default function ChatScreen(p:Props){
    <Pressable style={s.menuButton} onPress={p.onMenu}><Text style={s.menuIcon}>☰</Text></Pressable>
    <Text style={s.brand}>Pocket Buddy</Text>
    {p.speechActive?<Pressable style={s.stopSpeech} onPress={p.onStopSpeech}><Text style={s.stopSpeechText}>Stop voice</Text></Pressable>:null}
-   <Pressable style={s.topAction} onPress={p.onModels}><Text style={s.topActionText}>＋</Text></Pressable>
+   <Pressable style={[s.topAction,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy}><Text style={s.topActionText}>＋</Text></Pressable>
   </View>
   {empty?<ScrollView style={s.welcomeScroll} contentContainerStyle={s.welcome} keyboardShouldPersistTaps="handled">
     <View style={s.logo}><Text style={s.logoGlyph}>✳</Text></View>
@@ -92,7 +92,7 @@ export default function ChatScreen(p:Props){
   <View style={s.composerWrap}>
    {editingId?<View style={s.editingBanner}><Text style={s.editingText}>Editing this message. Sending replaces it and regenerates the reply.</Text><Pressable onPress={()=>{setEditingId(null);setDraft('');}}><Text style={s.editingCancel}>Cancel</Text></Pressable></View>:null}
    <View style={s.modelStrip}>
-    <Pressable style={s.modelPill} onPress={p.onModels}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
+    <Pressable style={[s.modelPill,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
     <Pressable style={[s.toolsPill,p.toolsEnabled&&s.toolsPillActive]} onPress={p.onToggleTools}><Text style={[s.toolsText,p.toolsEnabled&&s.toolsTextActive]}>✧ Tools {p.toolsEnabled?'On':'Off'}</Text></Pressable>
    </View>
    <View style={s.composer}>
@@ -113,7 +113,7 @@ export default function ChatScreen(p:Props){
      <Action label="Generate image" detail="Use the built-in image workflow" icon="▧" onPress={()=>quick('image')}/>
      <Action label="Generate video" detail="Create a video through your media engine" icon="▶" onPress={()=>quick('video')}/>
      <Action label="Generate audio" detail="Create music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
-     <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')}/>
+     <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')} disabled={p.busy}/>
      <Action label="Connectors" detail="GitHub, MCP and external tools" icon="⌘" onPress={()=>quick('connectors')}/>
      <Action label="Media library" detail="Review generation jobs" icon="▤" onPress={()=>quick('gallery')}/>
     </View>
@@ -121,8 +121,8 @@ export default function ChatScreen(p:Props){
   </Modal>
  </KeyboardAvoidingView>;
 }
-function Action({label,detail,icon,onPress}:{label:string;detail:string;icon:string;onPress:()=>void}){
- return <Pressable style={s.actionRow} onPress={onPress}><View style={s.actionIcon}><Text style={s.actionGlyph}>{icon}</Text></View><View style={{flex:1}}><Text style={s.actionLabel}>{label}</Text><Text style={s.actionDetail}>{detail}</Text></View><Text style={s.actionArrow}>›</Text></Pressable>;
+function Action({label,detail,icon,onPress,disabled=false}:{label:string;detail:string;icon:string;onPress:()=>void;disabled?:boolean}){
+ return <Pressable disabled={disabled} style={[s.actionRow,disabled&&s.disabledAction]} onPress={onPress}><View style={s.actionIcon}><Text style={s.actionGlyph}>{icon}</Text></View><View style={{flex:1}}><Text style={s.actionLabel}>{label}</Text><Text style={s.actionDetail}>{detail}</Text></View><Text style={s.actionArrow}>›</Text></Pressable>;
 }
 const markdown:any={
  body:{color:'#f1f1f4',fontSize:15,lineHeight:23},paragraph:{marginTop:0,marginBottom:9},
@@ -139,7 +139,7 @@ const s=StyleSheet.create({
  root:{flex:1,backgroundColor:C.bg},topbar:{height:56,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10,borderBottomWidth:1,borderBottomColor:'#222226'},
  menuButton:{width:38,height:38,borderRadius:19,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},
  menuIcon:{color:C.text,fontSize:19},brand:{flex:1,color:C.text,fontSize:17,fontWeight:'700'},
- topAction:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},topActionText:{color:C.text,fontSize:23,marginTop:-2},
+ disabledAction:{opacity:0.45},topAction:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},topActionText:{color:C.text,fontSize:23,marginTop:-2},
  welcomeScroll:{flex:1},
  welcome:{flexGrow:1,justifyContent:'center',alignItems:'center',paddingHorizontal:22,paddingTop:18,paddingBottom:32},
  setupCard:{width:'100%',maxWidth:430,backgroundColor:'#19191e',borderWidth:1,borderColor:'#373740',borderRadius:20,padding:16,marginTop:22},

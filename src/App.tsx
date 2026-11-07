@@ -108,20 +108,26 @@ function BuddyApp(){
   setActiveId(id);setMessages(next);setLiveText('');setBusy(true);setStatus('Thinking');
   try{await saveCurrent(id,next,title);}catch(error){setBootError('Chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
   try{
-   const answer=await runAgent(next,event=>{
-    if(event.type==='status')setStatus(event.message);
-    if(event.type==='token')setLiveText(old=>old+event.token);
-    if(event.type==='clear_tokens')setLiveText('');
-    if(event.type==='tool_start')setStatus('Using '+event.name);
-    if(event.type==='tool_result')setStatus('Reviewing tool result');
-   },confirmTool,toolsEnabled,id);
+   let answer:string;
+   try{
+    answer=await runAgent(next,event=>{
+     if(event.type==='status')setStatus(event.message);
+     if(event.type==='token')setLiveText(old=>old+event.token);
+     if(event.type==='clear_tokens')setLiveText('');
+     if(event.type==='tool_start')setStatus('Using '+event.name);
+     if(event.type==='tool_result')setStatus('Reviewing tool result');
+    },confirmTool,toolsEnabled,id);
+   }catch(error){
+    const assistant:ChatMessage={id:'assistant-error-'+Date.now(),role:'assistant',content:'I could not complete that request: '+(error instanceof Error?error.message:String(error)),createdAt:Date.now(),error:true};
+    const failed=[...next,assistant];setMessages(failed);setLiveText('');
+    try{await saveCurrent(id,failed,title);}
+    catch(saveError){setBootError('The error response could not be saved: '+(saveError instanceof Error?saveError.message:String(saveError)));}
+    return;
+   }
    const assistant:ChatMessage={id:'assistant-'+Date.now(),role:'assistant',content:answer,createdAt:Date.now()};
    const complete=[...next,assistant];setMessages(complete);setLiveText('');
-   await saveCurrent(id,complete,title);
-  }catch(error){
-   const assistant:ChatMessage={id:'assistant-error-'+Date.now(),role:'assistant',content:'I could not complete that request: '+(error instanceof Error?error.message:String(error)),createdAt:Date.now(),error:true};
-   const complete=[...next,assistant];setMessages(complete);setLiveText('');
-   try{await saveCurrent(id,complete,title);}catch{}
+   try{await saveCurrent(id,complete,title);}
+   catch(error){setBootError('Your response was generated, but chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
   }finally{setBusy(false);setStatus('');}
  };
  const send=async(text:string)=>{
@@ -205,7 +211,7 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
