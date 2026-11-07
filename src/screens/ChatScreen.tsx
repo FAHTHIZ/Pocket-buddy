@@ -1,24 +1,29 @@
 import React,{useEffect,useRef,useState}from'react';
-import{ActivityIndicator,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import Markdown from'react-native-markdown-display';
 import type{ChatMessage}from'../types';
 
 const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa',blue:'#9fc0ff'};
 type Props={
- messages:ChatMessage[];onSend:(text:string)=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;busy:boolean;status:string;modelName:string;
+ messages:ChatMessage[];onSend:(text:string)=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
  needsSetup:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
 };
 export default function ChatScreen(p:Props){
- const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null);
+ const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null),[voiceBusy,setVoiceBusy]=useState(false);
  const[providerUrl,setProviderUrl]=useState('https://api.openai.com/v1');
  const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState('');
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
  const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
+ const captureVoice=async()=>{
+  try{setVoiceBusy(true);const transcript=await p.onVoiceInput();if(transcript.trim())setDraft(old=>old.trim()?old.trim()+' '+transcript.trim():transcript.trim());}
+  catch(error){Alert.alert('Voice input unavailable',error instanceof Error?error.message:String(error));}
+  finally{setVoiceBusy(false);}
+ };
  const connect=async()=>{
   if(!providerUrl.trim()){setConnectError('Paste your provider URL first.');return;}
   setConnecting(true);setConnectError('');
@@ -87,6 +92,7 @@ export default function ChatScreen(p:Props){
     <TextInput value={draft} onChangeText={setDraft} placeholder={p.needsSetup?"Connect an AI to start chatting":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.needsSetup} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
     <View style={s.composerBottom}>
      <Pressable style={s.plusButton} onPress={()=>setActions(true)}><Text style={s.plus}>＋</Text></Pressable>
+     <Pressable style={[s.voiceButton,(voiceBusy||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.needsSetup}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
      <Text style={s.inputHint}>Local or API · Your choice</Text>
      <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.needsSetup}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
     </View>
@@ -169,6 +175,7 @@ const s=StyleSheet.create({
  composerBottom:{flexDirection:'row',alignItems:'center',gap:10,marginTop:6},
  plusButton:{width:34,height:34,borderRadius:17,borderWidth:1,borderColor:'#64646d',alignItems:'center',justifyContent:'center'},
  plus:{color:'#f0f0f4',fontSize:23,lineHeight:26},inputHint:{color:'#7e7e88',fontSize:10,flex:1},
+ voiceButton:{width:34,height:34,borderRadius:17,backgroundColor:'#303039',alignItems:'center',justifyContent:'center'},voiceGlyph:{fontSize:16},
  sendButton:{width:37,height:37,borderRadius:19,backgroundColor:'#f0f0f2',alignItems:'center',justifyContent:'center'},
  sendDisabled:{backgroundColor:'#4b4b52'},sendArrow:{color:'#111',fontSize:24,fontWeight:'700',marginTop:-2},
  disclaimer:{textAlign:'center',color:'#707078',fontSize:10,paddingTop:7},

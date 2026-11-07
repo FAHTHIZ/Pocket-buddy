@@ -54,6 +54,12 @@ export default function SettingsScreen({onBack,onSaved}:Props){
    <Text style={s.label}>Voice ID</Text><TextInput value={config.voiceId} onChangeText={v=>patch({voiceId:v})} placeholder="Your provider voice ID" placeholderTextColor="#777" autoCapitalize="none" style={s.input}/>
    <Text style={s.label}>Speech model</Text><TextInput value={config.voiceModel} onChangeText={v=>patch({voiceModel:v})} placeholder="speech-model-id" placeholderTextColor="#777" autoCapitalize="none" style={s.input}/>
    <Text style={s.helper}>Read aloud uses your phone's installed voice by default. With a voice key and voice ID, it can use the configured neural speech provider instead.</Text>
+   <Text style={[s.section,{marginTop:25}]}>PERSONAL ASSISTANT</Text>
+   <Text style={s.label}>Assistant name</Text>
+   <TextInput value={config.assistantName} onChangeText={v=>patch({assistantName:v})} placeholder="Pocket Buddy" placeholderTextColor="#777" style={s.input}/>
+   <Text style={s.label}>Personality and instructions</Text>
+   <TextInput value={config.systemPrompt} onChangeText={v=>patch({systemPrompt:v})} placeholder="Describe how your assistant should respond, what it should prioritize, and any preferences to follow." placeholderTextColor="#777" multiline style={[s.input,s.multiline]}/>
+   <Text style={s.helper}>These instructions are included with each conversation. Keep them concise; long instructions use part of the model context window.</Text>
    <Text style={[s.section,{marginTop:25}]}>PRIVACY</Text>
    <View style={s.info}><Text style={s.infoTitle}>You choose where requests go</Text><Text style={s.helper}>Local prompts are processed on-device. API prompts go to the endpoint you set. Search goes to your SearXNG URL. MCP arguments go to the selected MCP server. ComfyUI prompts and workflows go to your configured server.</Text></View>
   </ScrollView>
