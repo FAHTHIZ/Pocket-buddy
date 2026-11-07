@@ -25,25 +25,44 @@ fi
 adb logcat -c
 adb install -r PocketBuddy-smoke.apk
 adb shell am start -W -n ai.pocketbuddy/com.pocketbuddy.MainActivity
-sleep 25
 
-activity_state="$(adb shell dumpsys activity activities)"
-if ! printf '%s\n' "$activity_state" | grep -F 'ai.pocketbuddy' >/dev/null; then
-  echo "ActivityManager did not report the Pocket Buddy package after launch."
-  adb shell dumpsys activity top || true
+# Fail with the actual Android exception instead of waiting until the launcher
+# replaces a crashed activity and reporting only that the Activity disappeared.
+sleep 3
+adb logcat -d > "$startup_log"
+if grep -E 'Process: ai\.pocketbuddy|Unable to start activity ComponentInfo\{ai\.pocketbuddy|ReactNativeJS.*(Error|error)|Unable to load script' "$startup_log"; then
+  echo "Pocket Buddy emitted a startup crash or JavaScript bundle error."
   exit 1
 fi
 
 process_id="$(adb shell pidof ai.pocketbuddy | tr -d '\r' || true)"
 if [ -z "$process_id" ]; then
-  echo "Pocket Buddy process is not running after launch."
+  echo "Pocket Buddy process did not remain alive after launch."
+  adb shell dumpsys activity top || true
+  tail -n 120 "$startup_log" || true
+  exit 1
+fi
+
+sleep 20
+process_id="$(adb shell pidof ai.pocketbuddy | tr -d '\r' || true)"
+if [ -z "$process_id" ]; then
+  echo "Pocket Buddy exited during the post-launch stability window."
+  adb logcat -d > "$startup_log"
+  grep -E 'FATAL EXCEPTION|Process: ai\.pocketbuddy|Unable to start activity ComponentInfo\{ai\.pocketbuddy|ReactNativeJS.*(Error|error)|Unable to load script' "$startup_log" | tail -n 80 || true
+  exit 1
+fi
+
+activity_state="$(adb shell dumpsys activity activities)"
+if ! printf '%s\n' "$activity_state" | grep -F 'ai.pocketbuddy' >/dev/null; then
+  echo "ActivityManager did not report Pocket Buddy as an active app."
+  adb shell dumpsys activity top || true
   exit 1
 fi
 
 adb logcat -d > "$startup_log"
-if grep -E 'FATAL EXCEPTION|Unable to load script|ReactNativeJS.*(Error|error)' "$startup_log"; then
+if grep -E 'FATAL EXCEPTION|Process: ai\.pocketbuddy|Unable to start activity ComponentInfo\{ai\.pocketbuddy|ReactNativeJS.*(Error|error)|Unable to load script' "$startup_log"; then
   echo "Android startup log contains a fatal or JavaScript launch error."
   exit 1
 fi
 
-echo "Standalone APK installed and launched successfully."
+echo "Standalone APK installed and remained active for the smoke-test window."
