@@ -8,6 +8,7 @@ export async function loadLocalModel(path:string,force=false):Promise<void>{
  if(localContext){try{await localContext.release();}catch{}localContext=null;}
  const config=await loadConfig();
  const options={model:path.startsWith('file://')?path:'file://'+path,n_ctx:config.nCtx,n_batch:Math.min(256,Math.max(64,Math.floor(config.nCtx/16))),use_mlock:false,flash_attn:false};
+ localRuntimeStatus='';
  try{
   try{
    localContext=await initLlama({...options,n_gpu_layers:config.nGpuLayers});
