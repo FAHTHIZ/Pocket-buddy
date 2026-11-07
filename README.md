@@ -85,10 +85,10 @@ Keep the keystore and passwords private, backed up securely, and out of Git. Wit
 ## First-run experience
 
 1. Open Pocket Buddy. The chat welcome screen appears first; chat-history restoration and local-model loading happen in the background.
-2. Paste an OpenAI-compatible provider URL and API key into the welcome card. The model ID is optional: Pocket Buddy queries the provider's `/models` endpoint, tries available chat models, and sends a small connection test.
-3. When the test succeeds, the provider is saved and the same screen becomes the normal chat session. The API key is stored using Android secure storage.
-4. To use an on-device model instead, choose **Use a local model** from the welcome card. Browse GGUF files, select a quantization and install it. Installed models remain in the library for switching without another download. A Hugging Face read token in Settings enables downloads of models your account is permitted to access.
-5. Settings, Connectors and Media library remain available from the side drawer for optional advanced configuration. They are not required to connect a text provider and start chatting.
+2. The primary action is **Choose a model for this phone**. Pocket Buddy detects physical RAM and available storage, then shows a short shelf of GGUF models with a suitable quantization already selected. Tap **Download & start**; the app downloads the model, adds it to the library, loads it and returns to the same chat screen automatically.
+3. The starter shelf includes Qwen3 0.6B Instruct (Q4_K_M, about 484 MB) and SmolLM2 360M Instruct (Q4_K_M, about 271 MB). Qwen3 1.7B Instruct (Q4_K_M, about 1.28 GB) is shown only on devices reporting at least 5.5 GB physical RAM. These are initial recommendations, not a promise of a particular speed or successful inference on every Android device. The phone-aware fit warning still checks current free memory and storage before download.
+4. To use a remote provider instead, expand **Use an API provider instead** on the same welcome screen. Pocket Buddy tests the connection and discovers a model where the provider exposes `/models`; the key is stored using Android secure storage.
+5. The chat remains the main workspace. The model chip above the composer opens the model shelf for switching; Settings, Connectors and Media library are optional destinations in the side drawer. A Hugging Face read token in Settings enables downloads of gated models your account is permitted to access.
 
 A provider that does not expose `/models` can still be used by entering its exact model ID in the optional Model ID field. Provider URLs must be HTTPS and OpenAI-compatible. API keys are never accepted inside URLs.
 

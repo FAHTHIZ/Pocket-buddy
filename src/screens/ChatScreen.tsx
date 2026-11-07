@@ -14,7 +14,7 @@ type Props={
 export default function ChatScreen(p:Props){
  const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null),[voiceBusy,setVoiceBusy]=useState(false);
  const[providerUrl,setProviderUrl]=useState('https://api.openai.com/v1');
- const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState('');
+ const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState(''),[showProviderSetup,setShowProviderSetup]=useState(false);
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
@@ -25,6 +25,7 @@ export default function ChatScreen(p:Props){
   finally{setVoiceBusy(false);}
  };
  const connect=async()=>{
+  setShowProviderSetup(true);
   if(!providerUrl.trim()){setConnectError('Paste your provider URL first.');return;}
   setConnecting(true);setConnectError('');
   try{await p.onConnectProvider(providerUrl,providerKey,providerModel);}
@@ -45,23 +46,29 @@ export default function ChatScreen(p:Props){
     <Text style={s.welcomeTitle}>{p.needsSetup?'Your AI starts here':'What can I do for you today?'}</Text>
     <Text style={s.welcomeSubtitle}>{p.needsSetup?'Connect a provider or choose a local model. Pocket Buddy will do the setup for you.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
     {p.needsSetup?<View style={s.setupCard}>
-     <Text style={s.setupEyebrow}>QUICK SETUP</Text>
-     <Text style={s.setupTitle}>Connect your AI</Text>
-     <Text style={s.setupCopy}>Paste an OpenAI-compatible provider URL. We’ll find an available chat model and test the connection automatically.</Text>
-     <Text style={s.setupLabel}>Provider URL</Text>
-     <TextInput value={providerUrl} onChangeText={setProviderUrl} placeholder="https://api.provider.com/v1" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.setupInput}/>
-     <Text style={s.setupLabel}>API key <Text style={s.setupOptional}>(optional for private endpoints)</Text></Text>
-     <TextInput value={providerKey} onChangeText={setProviderKey} placeholder="Paste your API key" placeholderTextColor="#777781" secureTextEntry autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
-     <Text style={s.setupLabel}>Model ID <Text style={s.setupOptional}>(leave blank to auto-detect)</Text></Text>
-     <TextInput value={providerModel} onChangeText={setProviderModel} placeholder="Auto-detect from provider" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
-     {connectError?<Text style={s.setupError}>{connectError}</Text>:null}
-     <Pressable style={[s.connectButton,connecting&&s.connectButtonBusy]} onPress={connect} disabled={connecting}>
-      {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
+     <Text style={s.setupEyebrow}>QUICK SETUP · NO ACCOUNT NEEDED</Text>
+     <Text style={s.setupTitle}>Get your first model</Text>
+     <Text style={s.setupCopy}>Choose a model that fits this phone. Pocket Buddy will download it, load it and bring you straight into chat. Once downloaded, it can run offline.</Text>
+     <Pressable style={[s.connectButton,connecting&&s.connectButtonBusy]} onPress={()=>p.onQuickAction('models')} disabled={connecting}>
+      <Text style={s.connectButtonText}>Choose a model for this phone  →</Text>
      </Pressable>
-     <Pressable style={s.localButton} onPress={()=>p.onQuickAction('models')} disabled={connecting}>
-      <Text style={s.localButtonText}>Or use a local model on this phone</Text>
+     <Pressable style={s.localButton} onPress={()=>setShowProviderSetup(value=>!value)} disabled={connecting}>
+      <Text style={s.localButtonText}>{showProviderSetup?'Hide API provider setup':'Use an API provider instead'}</Text>
      </Pressable>
-     <Text style={s.setupPrivacy}>Your API key is stored in Android secure storage. It is not saved in chat history.</Text>
+     {showProviderSetup?<View style={s.providerForm}>
+      <Text style={s.setupCopy}>Connect an OpenAI-compatible service. Some providers require a paid key; local models do not.</Text>
+      <Text style={s.setupLabel}>Provider URL</Text>
+      <TextInput value={providerUrl} onChangeText={setProviderUrl} placeholder="https://api.provider.com/v1" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.setupInput}/>
+      <Text style={s.setupLabel}>API key <Text style={s.setupOptional}>(optional for private endpoints)</Text></Text>
+      <TextInput value={providerKey} onChangeText={setProviderKey} placeholder="Paste your API key" placeholderTextColor="#777781" secureTextEntry autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
+      <Text style={s.setupLabel}>Model ID <Text style={s.setupOptional}>(leave blank to auto-detect)</Text></Text>
+      <TextInput value={providerModel} onChangeText={setProviderModel} placeholder="Auto-detect from provider" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} style={s.setupInput}/>
+      {connectError?<Text style={s.setupError}>{connectError}</Text>:null}
+      <Pressable style={[s.connectButton,connecting&&s.connectButtonBusy]} onPress={connect} disabled={connecting}>
+       {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
+      </Pressable>
+     </View>:null}
+     <Text style={s.setupPrivacy}>Local model files and chats stay on this phone unless you choose a remote service.</Text>
     </View>:<View style={s.suggestions}>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Explain a complex topic in simple terms')}><Text style={s.suggestionText}>Explain a complex topic</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Search the web for the latest developments in ')}><Text style={s.suggestionText}>Search the web</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
@@ -136,6 +143,7 @@ const s=StyleSheet.create({
  welcomeScroll:{flex:1},
  welcome:{flexGrow:1,justifyContent:'center',alignItems:'center',paddingHorizontal:22,paddingTop:18,paddingBottom:32},
  setupCard:{width:'100%',maxWidth:430,backgroundColor:'#19191e',borderWidth:1,borderColor:'#373740',borderRadius:20,padding:16,marginTop:22},
+ providerForm:{borderTopWidth:1,borderTopColor:'#33333b',paddingTop:10,marginTop:3},
  setupEyebrow:{color:'#9fc0ff',fontSize:9,fontWeight:'800',letterSpacing:1.5},
  setupTitle:{color:C.text,fontSize:19,fontWeight:'800',marginTop:6},
  setupCopy:{color:C.muted,fontSize:11,lineHeight:17,marginTop:6,marginBottom:8},
