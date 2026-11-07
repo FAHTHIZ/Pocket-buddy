@@ -18,7 +18,8 @@ permissions:
 
 concurrency:
   group: pocket-buddy-android-v7-${{ github.ref }}
-  cancel-in-progress: false
+  # Only the latest main commit needs a full native build; cancel stale queued/running validation.
+  cancel-in-progress: true
 
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
