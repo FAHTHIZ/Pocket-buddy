@@ -1,5 +1,5 @@
 import{initLlama}from'llama.rn';
-import type{AppConfig,ModelMessage,ModelResponse,ToolCall,ToolDefinition}from'../types';
+import type{AppConfig,LocalBenchmark,ModelMessage,ModelResponse,ToolCall,ToolDefinition}from'../types';
 import{getProviderKey,loadConfig}from'./storage';
 let localContext:any=null,activeLocalPath='',localRuntimeStatus='';
 export async function loadLocalModel(path:string,force=false):Promise<void>{
@@ -25,6 +25,19 @@ export async function loadLocalModel(path:string,force=false):Promise<void>{
 }
 export function isLocalModelLoaded():boolean{return !!localContext;}
 export function getLocalRuntimeStatus():string{return localRuntimeStatus;}
+export async function clearLocalConversationCache():Promise<void>{
+ if(localContext&&typeof localContext.clearCache==='function')await localContext.clearCache();
+}
+export async function runLocalBenchmark():Promise<LocalBenchmark>{
+ if(!localContext)throw new Error('Load a local model before running a benchmark.');
+ if(typeof localContext.bench!=='function')throw new Error('This llama.rn build does not expose its native benchmark API. Update the runtime before benchmarking.');
+ const config=await loadConfig();
+ const result=await localContext.bench(512,128,1,3);
+ const promptSpeed=Number(result?.speedPp),generationSpeed=Number(result?.speedTg);
+ if(!Number.isFinite(promptSpeed)||!Number.isFinite(generationSpeed)||promptSpeed<=0||generationSpeed<=0)
+  throw new Error('The native benchmark returned incomplete speed metrics. Reload the model and try again.');
+ return{ranAt:Date.now(),promptTokens:Number(result.pp)||512,generatedTokens:Number(result.tg)||128,promptTokensPerSecond:promptSpeed,generationTokensPerSecond:generationSpeed,promptMs:Number(result.tPp)||0,generationMs:Number(result.tTg)||0,gpuLayers:config.nGpuLayers,contextSize:config.nCtx,gpuActive:!!localContext.gpu};
+}
 function normalizeToolCalls(items:any[]=[]):ToolCall[]{return items.map((item,index)=>({id:item.id||'pb_call_'+Date.now()+'_'+index,type:'function',function:{name:item.function?.name||'',arguments:typeof item.function?.arguments==='string'?item.function.arguments:JSON.stringify(item.function?.arguments||{})}}));}
 class ProviderError extends Error{status:number;constructor(status:number,message:string){super(message);this.status=status;}}
 function parseError(status:number,raw:string):ProviderError{let message='Provider returned HTTP '+status;try{const data=JSON.parse(raw);message=data.error?.message||data.message||message;}catch{}return new ProviderError(status,message);}

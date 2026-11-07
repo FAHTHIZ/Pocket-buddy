@@ -1,10 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import{NativeModules}from'react-native';
 import{getHuggingFaceToken}from'./storage';
-import type{DeviceProfile,LocalModelRecord,NativeDownloadStatus}from'../types';
+import type{DeviceProfile,LocalBenchmark,LocalModelRecord,NativeDownloadStatus}from'../types';
 type NativeDownload={startDownload(url:string,fileName:string,headers:Record<string,string>):Promise<{downloadId:string}>;getDownloadStatus(id:string):Promise<NativeDownloadStatus>;cancelDownload(id:string):Promise<boolean>;getDeviceProfile():Promise<DeviceProfile>};
 const Native=NativeModules.PocketBuddyNative as NativeDownload;
 const LIBRARY_KEY='pocket-buddy.installed-models.v1';
+const BENCHMARK_KEY='pocket-buddy.model-benchmarks.v1';
+export async function getModelBenchmark(path:string):Promise<LocalBenchmark|null>{
+ try{const value=JSON.parse((await AsyncStorage.getItem(BENCHMARK_KEY))||'{}');return value&&typeof value==='object'&&value[path]?value[path] as LocalBenchmark:null;}catch{return null;}
+}
+export async function saveModelBenchmark(path:string,result:LocalBenchmark):Promise<void>{
+ let value:Record<string,LocalBenchmark>={};try{value=JSON.parse((await AsyncStorage.getItem(BENCHMARK_KEY))||'{}')||{};}catch{}
+ value[path]=result;await AsyncStorage.setItem(BENCHMARK_KEY,JSON.stringify(value));
+}
 export type HubModel={id:string;downloads:number;likes:number};
 export type HubFile={name:string;size?:number};
 export async function getDeviceProfile():Promise<DeviceProfile>{if(!Native?.getDeviceProfile)throw new Error('Android device profile is unavailable. Rebuild the app.');return Native.getDeviceProfile();}
