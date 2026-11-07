@@ -9,6 +9,8 @@ async function database():Promise<Database>{
   await db.executeAsync('PRAGMA journal_mode=WAL');await db.executeAsync('PRAGMA foreign_keys=ON');
   await db.executeAsync('CREATE TABLE IF NOT EXISTS conversations(id TEXT PRIMARY KEY,title TEXT NOT NULL,updated_at INTEGER NOT NULL)');
   await db.executeAsync('CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,role TEXT NOT NULL,content TEXT NOT NULL,created_at INTEGER NOT NULL,error INTEGER NOT NULL DEFAULT 0,attachments TEXT,FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE)');
+  const messageColumns=await db.executeAsync('PRAGMA table_info(messages)');
+  if(!(messageColumns.results as Row[]).some(column=>String(column.name)==='attachments'))await db.executeAsync('ALTER TABLE messages ADD COLUMN attachments TEXT');
   await db.executeAsync('CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages(conversation_id,created_at)');
   await db.executeAsync('CREATE TABLE IF NOT EXISTS generation_jobs(id TEXT PRIMARY KEY,kind TEXT NOT NULL,prompt TEXT NOT NULL,prompt_id TEXT NOT NULL UNIQUE,status TEXT NOT NULL,created_at INTEGER NOT NULL,outputs TEXT NOT NULL DEFAULT "[]")');
   await db.executeAsync('CREATE TABLE IF NOT EXISTS conversation_context(conversation_id TEXT PRIMARY KEY,summary TEXT NOT NULL,through_message_id TEXT NOT NULL,updated_at INTEGER NOT NULL)');

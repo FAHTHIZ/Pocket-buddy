@@ -9,7 +9,7 @@ type Props={
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
- needsSetup:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
+ needsSetup:boolean;modelStarting:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
 };
 export default function ChatScreen(p:Props){
  const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null),[voiceBusy,setVoiceBusy]=useState(false);
@@ -18,7 +18,7 @@ export default function ChatScreen(p:Props){
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
- const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
+ const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup||p.modelStarting)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
  const captureVoice=async()=>{
   try{setVoiceBusy(true);const transcript=await p.onVoiceInput();if(transcript.trim())setDraft(old=>old.trim()?old.trim()+' '+transcript.trim():transcript.trim());}
   catch(error){Alert.alert('Voice input unavailable',error instanceof Error?error.message:String(error));}
@@ -39,13 +39,14 @@ export default function ChatScreen(p:Props){
    <Pressable style={s.menuButton} onPress={p.onMenu}><Text style={s.menuIcon}>☰</Text></Pressable>
    <Text style={s.brand}>Pocket Buddy</Text>
    {p.speechActive?<Pressable style={s.stopSpeech} onPress={p.onStopSpeech}><Text style={s.stopSpeechText}>Stop voice</Text></Pressable>:null}
-   <Pressable style={[s.topAction,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy}><Text style={s.topActionText}>＋</Text></Pressable>
+   <Pressable style={[s.topAction,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy||p.modelStarting}><Text style={s.topActionText}>＋</Text></Pressable>
   </View>
+  {p.modelStarting?<View style={s.startupBanner}><ActivityIndicator color={C.blue} size="small"/><Text style={s.startupBannerText}>Restoring your local model…</Text></View>:null}
   {empty?<ScrollView style={s.welcomeScroll} contentContainerStyle={s.welcome} keyboardShouldPersistTaps="handled">
     <View style={s.logo}><Text style={s.logoGlyph}>✳</Text></View>
     <Text style={s.welcomeTitle}>{p.needsSetup?'Your AI starts here':'What can I do for you today?'}</Text>
     <Text style={s.welcomeSubtitle}>{p.needsSetup?'Pick a model sized for this phone. Pocket Buddy downloads and loads it for you, or you can connect a provider.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
-    {p.needsSetup?<View style={s.setupCard}>
+    {p.modelStarting?<View style={s.setupCard}><ActivityIndicator color={C.blue}/><Text style={s.setupTitle}>Opening your model</Text><Text style={s.setupCopy}>Restoring the model you last used. Your downloaded weights and chats stay on this phone.</Text></View>:p.needsSetup?<View style={s.setupCard}>
      <Text style={s.setupEyebrow}>QUICK SETUP · NO ACCOUNT NEEDED</Text>
      <Text style={s.setupTitle}>Get your first model</Text>
      <Text style={s.setupCopy}>Choose a model that fits this phone. Pocket Buddy will download it, load it and bring you straight into chat. Once downloaded, it can run offline.</Text>
@@ -92,16 +93,16 @@ export default function ChatScreen(p:Props){
   <View style={s.composerWrap}>
    {editingId?<View style={s.editingBanner}><Text style={s.editingText}>Editing this message. Sending replaces it and regenerates the reply.</Text><Pressable onPress={()=>{setEditingId(null);setDraft('');}}><Text style={s.editingCancel}>Cancel</Text></Pressable></View>:null}
    <View style={s.modelStrip}>
-    <Pressable style={[s.modelPill,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
+    <Pressable style={[s.modelPill,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy||p.modelStarting}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
     <Pressable style={[s.toolsPill,p.toolsEnabled&&s.toolsPillActive]} onPress={p.onToggleTools}><Text style={[s.toolsText,p.toolsEnabled&&s.toolsTextActive]}>✧ Tools {p.toolsEnabled?'On':'Off'}</Text></Pressable>
    </View>
    <View style={s.composer}>
-    <TextInput value={draft} onChangeText={setDraft} placeholder={p.needsSetup?"Connect an AI to start chatting":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.needsSetup} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
+    <TextInput value={draft} onChangeText={setDraft} placeholder={p.needsSetup?"Connect an AI to start chatting":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.needsSetup&&!p.modelStarting} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
     <View style={s.composerBottom}>
      <Pressable style={s.plusButton} onPress={()=>setActions(true)}><Text style={s.plus}>＋</Text></Pressable>
-     <Pressable style={[s.voiceButton,(voiceBusy||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.needsSetup}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
+     <Pressable style={[s.voiceButton,(voiceBusy||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.needsSetup||p.modelStarting}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
      <Text style={s.inputHint}>Local or API · Your choice</Text>
-     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.needsSetup}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
+     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.needsSetup||p.modelStarting)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.needsSetup||p.modelStarting}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
     </View>
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
@@ -139,7 +140,7 @@ const s=StyleSheet.create({
  root:{flex:1,backgroundColor:C.bg},topbar:{height:56,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:10,borderBottomWidth:1,borderBottomColor:'#222226'},
  menuButton:{width:38,height:38,borderRadius:19,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},
  menuIcon:{color:C.text,fontSize:19},brand:{flex:1,color:C.text,fontSize:17,fontWeight:'700'},
- disabledAction:{opacity:0.45},topAction:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},topActionText:{color:C.text,fontSize:23,marginTop:-2},
+ disabledAction:{opacity:0.45},startupBanner:{minHeight:38,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9,backgroundColor:'#19191e',borderBottomWidth:1,borderBottomColor:'#2c2c34'},startupBannerText:{color:'#c3c3ce',fontSize:11},topAction:{width:36,height:36,borderRadius:18,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},topActionText:{color:C.text,fontSize:23,marginTop:-2},
  welcomeScroll:{flex:1},
  welcome:{flexGrow:1,justifyContent:'center',alignItems:'center',paddingHorizontal:22,paddingTop:18,paddingBottom:32},
  setupCard:{width:'100%',maxWidth:430,backgroundColor:'#19191e',borderWidth:1,borderColor:'#373740',borderRadius:20,padding:16,marginTop:22},

@@ -1,27 +1,40 @@
 import{initLlama}from'llama.rn';
 import type{AppConfig,LocalBenchmark,ModelMessage,ModelResponse,ToolCall,ToolDefinition}from'../types';
 import{getProviderKey,loadConfig}from'./storage';
-let localContext:any=null,activeLocalPath='',localRuntimeStatus='';
+let localContext:any=null,activeLocalPath='',localRuntimeStatus='',activeLocalConfig:AppConfig|null=null;
+async function initializeLocalContext(path:string,config:AppConfig):Promise<{context:any;status:string}>{
+ const options={model:path.startsWith('file://')?path:'file://'+path,n_ctx:config.nCtx,n_batch:Math.min(256,Math.max(64,Math.floor(config.nCtx/16))),use_mlock:false,flash_attn:false};
+ try{
+  const context=await initLlama({...options,n_gpu_layers:config.nGpuLayers});
+  return{context,status:context?.gpu?'GPU acceleration active':(context?.reasonNoGPU?'CPU fallback: '+String(context.reasonNoGPU):'CPU inference')};
+ }catch(gpuError){
+  if(config.nGpuLayers<=0)throw gpuError;
+  const context=await initLlama({...options,n_gpu_layers:0});
+  return{context,status:'CPU fallback after GPU offload failed: '+(gpuError instanceof Error?gpuError.message:String(gpuError)).slice(0,180)};
+ }
+}
 export async function loadLocalModel(path:string,force=false):Promise<void>{
  if(!path)throw new Error('No local model file was selected.');
  if(localContext&&activeLocalPath===path&&!force)return;
- if(localContext){try{await localContext.release();}catch{}localContext=null;}
+ const previousPath=activeLocalPath,previousConfig=activeLocalConfig,hadPrevious=!!localContext;
+ if(localContext){try{await localContext.release();}catch{}localContext=null;activeLocalPath='';activeLocalConfig=null;}
  const config=await loadConfig();
- const options={model:path.startsWith('file://')?path:'file://'+path,n_ctx:config.nCtx,n_batch:Math.min(256,Math.max(64,Math.floor(config.nCtx/16))),use_mlock:false,flash_attn:false};
- localRuntimeStatus='';
  try{
-  try{
-   localContext=await initLlama({...options,n_gpu_layers:config.nGpuLayers});
-  }catch(gpuError){
-   if(config.nGpuLayers<=0)throw gpuError;
-   localContext=await initLlama({...options,n_gpu_layers:0});
-   localRuntimeStatus='CPU fallback after GPU offload failed: '+(gpuError instanceof Error?gpuError.message:String(gpuError)).slice(0,180);
+  const loaded=await initializeLocalContext(path,config);
+  localContext=loaded.context;activeLocalPath=path;activeLocalConfig=config;localRuntimeStatus=loaded.status;
+ }catch(error){
+  localContext=null;activeLocalPath='';activeLocalConfig=null;localRuntimeStatus='';
+  if(hadPrevious&&previousPath&&previousConfig){
+   try{
+    const restored=await initializeLocalContext(previousPath,previousConfig);
+    localContext=restored.context;activeLocalPath=previousPath;activeLocalConfig=previousConfig;
+    localRuntimeStatus='Previous model restored after the requested model could not be loaded.';
+   }catch{
+    localContext=null;activeLocalPath='';activeLocalConfig=null;localRuntimeStatus='';
+   }
   }
-  activeLocalPath=path;
-  if(!localRuntimeStatus.startsWith('CPU fallback')){
-   localRuntimeStatus=localContext?.gpu?'GPU acceleration active':(localContext?.reasonNoGPU?'CPU fallback: '+String(localContext.reasonNoGPU):'CPU inference');
-  }
- }catch(error){localContext=null;activeLocalPath='';localRuntimeStatus='';throw error;}
+  throw error;
+ }
 }
 export function isLocalModelLoaded():boolean{return !!localContext;}
 export function getLocalRuntimeStatus():string{return localRuntimeStatus;}
@@ -61,8 +74,15 @@ function streamRequest(url:string,key:string,body:Record<string,unknown>,onToken
    }
   };
   const drain=(flush=false)=>{
-   buffer+=xhr.responseText.slice(cursor);cursor=xhr.responseText.length;const lines=buffer.split(/\r?\n/);buffer=flush?'':(lines.pop()||'');
-   for(const line of lines)if(line.startsWith('data:'))consume(line.slice(5));if(flush&&buffer.startsWith('data:'))consume(buffer.slice(5));
+   buffer+=xhr.responseText.slice(cursor);cursor=xhr.responseText.length;
+   const lines=buffer.split(/\r?\n/),tail=lines.pop()||'';
+   if(flush){
+    for(const line of [...lines,tail])if(line.startsWith('data:'))consume(line.slice(5));
+    buffer='';
+   }else{
+    for(const line of lines)if(line.startsWith('data:'))consume(line.slice(5));
+    buffer=tail;
+   }
   };
   xhr.open('POST',url);xhr.setRequestHeader('Content-Type','application/json');xhr.setRequestHeader('Accept','text/event-stream, application/json');if(key)xhr.setRequestHeader('Authorization','Bearer '+key);
   xhr.timeout=180000;xhr.onprogress=()=>drain(false);xhr.onerror=()=>{if(!settled){settled=true;reject(new Error('Network error while connecting to the model provider.'));}};
@@ -90,4 +110,4 @@ async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:To
 }
 export async function complete(messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{const config=await loadConfig();return config.mode==='local'?localCompletion(config,messages,tools,onToken):apiCompletion(config,messages,tools,onToken);}
 export async function testProviderConnection():Promise<string>{const config=await loadConfig();if(config.mode!=='api')throw new Error('Switch to API provider mode to test this connection.');const result=await apiCompletion(config,[{role:'user',content:'Reply with the single word OK.'}],[]);return result.content.trim()||'The provider responded, but returned no text.';}
-export async function releaseLocalModel():Promise<void>{if(localContext){try{await localContext.release();}catch{}}localContext=null;activeLocalPath='';localRuntimeStatus='';}
+export async function releaseLocalModel():Promise<void>{if(localContext){try{await localContext.release();}catch{}}localContext=null;activeLocalPath='';activeLocalConfig=null;localRuntimeStatus='';}

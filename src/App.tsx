@@ -24,7 +24,7 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
- const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false),[setupComplete,setSetupComplete]=useState(false);
+ const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false),[setupComplete,setSetupComplete]=useState(false),[restoringModel,setRestoringModel]=useState(false);
 
  useEffect(()=>{
   let mounted=true;
@@ -39,11 +39,11 @@ function BuddyApp(){
     ]);
     if(!mounted)return;
     setConfig(savedConfig);
-    const localReady=savedConfig.mode==='local'&&!!localUri;
     const apiReady=savedConfig.mode==='api'&&!!savedConfig.baseUrl&&!!savedConfig.model&&(setupMarker==='true'||!!providerKey);
     setSetupComplete(apiReady);
     if(savedConfig.mode==='local'&&localUri){
      setModelName(activeModel||'Loading local model…');
+     setRestoringModel(true);
      setReady(true);
      void loadLocalModel(localUri).then(()=>{
       if(mounted){setModelName(activeModel||'Local model');setSetupComplete(true);}
@@ -53,7 +53,7 @@ function BuddyApp(){
        setSetupComplete(false);
        setBootError(error instanceof Error?error.message:String(error));
       }
-     });
+     }).finally(()=>{if(mounted)setRestoringModel(false);});
     }else{
      setModelName(savedConfig.mode==='api'?(savedConfig.model||'Connect an AI'):'Choose a local model');
      setReady(true);
@@ -194,6 +194,7 @@ function BuddyApp(){
  const settingsSaved=async(next:AppConfig)=>{
   setConfig(next);
   if(next.mode==='api'){
+   setRestoringModel(false);
    await releaseLocalModel();
    const configured=!!next.baseUrl.trim()&&!!next.model.trim();
    setSetupComplete(configured);
@@ -202,8 +203,10 @@ function BuddyApp(){
   }else{
    const uri=await AsyncStorage.getItem('pocket-buddy.local-model-uri');
    if(uri){
+    setRestoringModel(true);
     try{await loadLocalModel(uri,true);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
     catch(e){setModelName('Local model unavailable');setSetupComplete(false);setBootError(e instanceof Error?e.message:String(e));}
+    finally{setRestoringModel(false);}
    }else{setModelName('Choose a local model');setSetupComplete(false);}
   }
   setScreen('chat');
@@ -211,7 +214,7 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}

@@ -18,8 +18,8 @@ permissions:
 
 concurrency:
   group: pocket-buddy-android-v7-${{ github.ref }}
-  # Only the latest main commit needs a full native build; cancel stale queued/running validation.
-  cancel-in-progress: true
+  # Let an active build finish; newer commits replace only the pending validation run.
+  cancel-in-progress: false
 
 env:
   ANDROID_HOME: /usr/local/lib/android/sdk
@@ -138,6 +138,8 @@ jobs:
           bash android/gradlew -p android \
             -PreactNativeArchitectures=arm64-v8a \
             -PpocketBuddyUseDebugSigning=true \
+            -PpocketBuddyVersionCode="$GITHUB_RUN_NUMBER" \
+            -PpocketBuddyVersionName="0.1.$GITHUB_RUN_NUMBER" \
             assembleRelease --stacktrace > android-release-build.log 2>&1
           code=$?
           tail -n 180 android-release-build.log
@@ -158,6 +160,8 @@ jobs:
           bash android/gradlew -p android \
             -PreactNativeArchitectures=x86_64 \
             -PpocketBuddyUseDebugSigning=true \
+            -PpocketBuddyVersionCode="$GITHUB_RUN_NUMBER" \
+            -PpocketBuddyVersionName="0.1.$GITHUB_RUN_NUMBER" \
             assembleRelease --stacktrace > android-smoke-build.log 2>&1
           code=$?
           tail -n 140 android-smoke-build.log

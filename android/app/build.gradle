@@ -17,6 +17,8 @@ def releaseSigning = [
     keyPassword: project.findProperty("POCKET_BUDDY_RELEASE_KEY_PASSWORD")
 ]
 def useDebugSigningForTestRelease = project.findProperty("pocketBuddyUseDebugSigning") == "true"
+def pocketBuddyVersionCode = (project.findProperty("pocketBuddyVersionCode") ?: "1").toString().toInteger()
+def pocketBuddyVersionName = (project.findProperty("pocketBuddyVersionName") ?: "0.1.0").toString()
 def releaseSigningConfigured = releaseSigning.values().every {
     it != null && !it.toString().trim().isEmpty()
 }
@@ -35,8 +37,8 @@ android {
         applicationId "ai.pocketbuddy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "0.1.0"
+        versionCode pocketBuddyVersionCode
+        versionName pocketBuddyVersionName
         ndk { abiFilters(*reactNativeArchitectures) }
     }
 
