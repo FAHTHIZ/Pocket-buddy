@@ -2,7 +2,10 @@ package com.pocketbuddy
 
 import android.app.ActivityManager
 import android.app.DownloadManager
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.ClipboardManager
 import android.content.ClipData
 import android.net.Uri
@@ -13,6 +16,9 @@ import android.os.StatFs
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import java.io.File
@@ -167,6 +173,8 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
     private var speechPlayer: MediaPlayer? = null
     private var speechFile: File? = null
     private var speechPromise: Promise? = null
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var recognitionPromise: Promise? = null
 
     private fun finishSpeech(promise: Promise, error: Throwable? = null) {
         if (speechPromise !== promise) return
@@ -201,6 +209,64 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
             promise.resolve(true)
         } catch (error: Exception) {
             promise.reject("CLIPBOARD_FAILED", error)
+        }
+    }
+
+    private fun finishRecognition(promise: Promise, text: String? = null, error: Throwable? = null) {
+        if (recognitionPromise !== promise) return
+        recognitionPromise = null
+        try { speechRecognizer?.destroy() } catch (_: Exception) {}
+        speechRecognizer = null
+        if (error != null) promise.reject("VOICE_RECOGNITION_FAILED", error)
+        else if (text.isNullOrBlank()) promise.reject("VOICE_NO_MATCH", "No speech was recognized.")
+        else promise.resolve(text)
+    }
+
+    @ReactMethod
+    fun startSpeechRecognition(languageTag: String, promise: Promise) {
+        if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            promise.reject("MICROPHONE_PERMISSION_REQUIRED", "Grant microphone permission before using voice input.")
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            promise.reject("SPEECH_RECOGNIZER_UNAVAILABLE", "No Android speech recognition service is installed.")
+            return
+        }
+        speechHandler.post {
+            try {
+                recognitionPromise?.let { previous ->
+                    finishRecognition(previous, error = IllegalStateException("The previous listening session was replaced."))
+                }
+                val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+                speechRecognizer = recognizer
+                recognitionPromise = promise
+                recognizer.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: android.os.Bundle?) {}
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() {}
+                    override fun onError(error: Int) {
+                        finishRecognition(promise, error = IllegalStateException("Speech recognition failed (code $error). Check the installed Android speech service and try again."))
+                    }
+                    override fun onResults(results: android.os.Bundle?) {
+                        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        finishRecognition(promise, text = matches?.firstOrNull())
+                    }
+                    override fun onPartialResults(partialResults: android.os.Bundle?) {}
+                    override fun onEvent(eventType: Int, params: android.os.Bundle?) {}
+                })
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag.ifBlank { Locale.getDefault().toLanguageTag() })
+                    putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                }
+                recognizer.startListening(intent)
+            } catch (error: Exception) {
+                finishRecognition(promise, error = error)
+            }
         }
     }
 
