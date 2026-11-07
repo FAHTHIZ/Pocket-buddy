@@ -1,19 +1,32 @@
 import React,{useEffect,useState}from'react';
 import{ActivityIndicator,Alert,FlatList,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,type HubFile,type HubModel}from'../services/modelLibrary';
+import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,type HubFile,type HubModel}from'../services/modelLibrary';
 import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark}from'../services/llm';
-import type{DeviceProfile,LocalBenchmark,LocalModelRecord}from'../types';
+import type{DeviceProfile,LocalBenchmark,LocalModelRecord,PendingModelDownloadState}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
 type Props={onBack:()=>void;onOpenSettings:()=>void;onLoaded:(name:string,uri:string)=>void};
 function bytesLabel(value?:number):string{return value?(value/1024/1024/1024).toFixed(2)+' GB':'Size unknown';}
 export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  const[query,setQuery]=useState('Qwen Instruct GGUF'),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});
  const[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[device,setDevice]=useState<DeviceProfile|null>(null),[downloading,setDownloading]=useState('');
- const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false);
- useEffect(()=>{getDeviceProfile().then(setDevice).catch(()=>{});listInstalledModels().then(setInstalled).catch(()=>{});AsyncStorage.getItem('pocket-buddy.local-model-uri').then(value=>setActivePath(value||'')).catch(()=>{});},[]);
+ const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]);
+ const refreshLibrary=async()=>{const [next,items]=await Promise.all([listInstalledModels(),refreshPendingModelDownloads()]);setInstalled(next);setPendingDownloads(items);};
+ useEffect(()=>{getDeviceProfile().then(setDevice).catch(()=>{});AsyncStorage.getItem('pocket-buddy.local-model-uri').then(value=>setActivePath(value||'')).catch(()=>{});refreshLibrary().catch(()=>{});const timer=setInterval(()=>refreshLibrary().catch(()=>{}),3000);return()=>clearInterval(timer);},[]);
  useEffect(()=>{if(activePath)getModelBenchmark(activePath).then(setBenchmark).catch(()=>setBenchmark(null));else setBenchmark(null);},[activePath]);
  const runBenchmark=async()=>{try{setBenchmarkBusy(true);const result=await runLocalBenchmark();await saveModelBenchmark(activePath,result);setBenchmark(result);}catch(error){Alert.alert('Benchmark failed',error instanceof Error?error.message:String(error));}finally{setBenchmarkBusy(false);}};
+ const removeModel=(item:LocalModelRecord)=>{
+  if(item.path===activePath){Alert.alert('Model is active','Switch to another model before deleting this file.');return;}
+  Alert.alert('Delete downloaded model?',item.name+'\n'+item.fileName+'\n\nThis removes the model file from this app and frees its storage.',[
+   {text:'Cancel',style:'cancel'},
+   {text:'Delete',style:'destructive',onPress:async()=>{try{setBusy(true);await deleteInstalledModelFile(item.path);await refreshLibrary();}catch(error){Alert.alert('Could not delete model',error instanceof Error?error.message:String(error));}finally{setBusy(false);}}}
+  ]);
+ };
+ const cancelPending=async(id:string)=>{
+  try{setBusy(true);await cancelModelDownload(id);await refreshLibrary();}
+  catch(error){Alert.alert('Could not cancel download',error instanceof Error?error.message:String(error));}
+  finally{setBusy(false);}
+ };
  const search=async()=>{try{setBusy(true);setModels(await searchHuggingFaceModels(query));}catch(e){Alert.alert('Search failed',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  const showFiles=async(id:string)=>{if(files[id]){setSelected(selected===id?'':id);return;}try{setBusy(true);const items=await getModelFiles(id);setFiles(old=>({...old,[id]:items}));setSelected(id);}catch(e){Alert.alert('Model files unavailable',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  const activate=async(item:LocalModelRecord)=>{try{setBusy(true);await loadLocalModel(item.path);await AsyncStorage.setItem('pocket-buddy.local-model-uri',item.path);await AsyncStorage.setItem('pocket-buddy.active-model',item.name);setActivePath(item.path);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(item.name,item.path);}catch(error){Alert.alert('Could not load model',error instanceof Error?error.message:String(error));}finally{setBusy(false);}};
@@ -23,7 +36,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
   const estimatedRuntimeMb=need*1.18+384;
   const safeRamBudget=device?Math.min((device.availableRamMb||0)*0.6,(device.memoryClassMb||0)*0.62):0;
   if(need&&ram&&estimatedRuntimeMb>safeRamBudget)warnings.push('Rough fit estimate: this model may exceed a safe memory budget after runtime and context overhead. Try a smaller quantization or context window. This is a heuristic, not a guarantee.');
-  const start=async()=>{try{setBusy(true);setDownloading(file.name);setProgress(0);const uri=await downloadModel(modelId,file.name,setProgress),modelName=modelId.split('/').pop()||'Local model';
+  const start=async()=>{try{setBusy(true);setDownloading(file.name);setProgress(0);const uri=await downloadModel(modelId,file.name,setProgress,undefined,file.size),modelName=modelId.split('/').pop()||'Local model';
    const record:LocalModelRecord={id:modelId+'::'+file.name,modelId,name:modelName,fileName:file.name,path:uri,size:file.size,addedAt:Date.now()};
    setInstalled(await registerInstalledModel(record));await AsyncStorage.setItem('pocket-buddy.local-model-uri',uri);await AsyncStorage.setItem('pocket-buddy.active-model',modelName);
    await loadLocalModel(uri);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
@@ -47,8 +60,16 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backGlyph}>‹</Text></Pressable><Text style={s.title}>Models</Text><Pressable onPress={onOpenSettings}><Text style={s.settings}>Settings</Text></Pressable></View>
   <View style={s.intro}><Text style={s.heading}>Your models</Text><Text style={s.sub}>Download a GGUF model once, keep it in your library, and switch models without downloading again.</Text></View>
+  {pendingDownloads.length?<View style={s.pendingPanel}>
+   <Text style={s.pendingTitle}>Downloads</Text>
+   {pendingDownloads.map(item=><View key={item.downloadId} style={s.pendingRow}>
+    <View style={{flex:1}}><Text style={s.pendingName} numberOfLines={1}>{item.name} · {item.fileName}</Text><Text style={s.pendingStatus}>{item.status==='failed'?'Download failed':item.status==='unknown'?'Checking system download':item.status+' · '+Math.round(item.progress*100)+'%'}</Text></View>
+    {item.status!=='failed'?<Pressable disabled={busy} style={s.pendingCancel} onPress={()=>cancelPending(item.downloadId)}><Text style={s.pendingCancelText}>Cancel</Text></Pressable>:null}
+   </View>)}
+  </View>:null}
   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
-   {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable></View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}
+   {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
+    {item.path===activePath?<Text style={s.activeHint}>Switch to another model before deleting</Text>:<Pressable disabled={busy} style={s.removeButton} onPress={()=>removeModel(item)}><Text style={s.removeButtonText}>Remove download</Text></Pressable>}</View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}
   </ScrollView>
   {runtimeStatus?<Text style={s.runtimeStatus}>Last loaded runtime: {runtimeStatus}</Text>:null}
   {activePath?<View style={s.benchmarkCard}>
@@ -73,6 +94,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
 const s=StyleSheet.create({
  root:{flex:1,backgroundColor:C.bg},header:{height:58,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomColor:'#25252b',borderBottomWidth:1},back:{width:40,height:40,borderRadius:20,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},backGlyph:{color:C.text,fontSize:30,marginTop:-3},title:{color:C.text,fontSize:17,fontWeight:'700'},settings:{color:'#bfcdf0',fontSize:12,fontWeight:'700',padding:8},
  intro:{paddingHorizontal:19,paddingTop:16,paddingBottom:8},heading:{color:C.text,fontSize:22,fontWeight:'700'},sub:{color:C.muted,fontSize:12,lineHeight:18,marginTop:5},installedList:{paddingHorizontal:15,paddingVertical:8,gap:9,minHeight:105},installedCard:{width:170,backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:13,padding:10},installedCardActive:{borderColor:'#6b9d86'},installedName:{color:C.text,fontSize:12,fontWeight:'700'},installedFile:{color:C.muted,fontSize:9,marginTop:5},installedSize:{color:'#8b8b95',fontSize:9,marginTop:4},loadButton:{backgroundColor:'#eee',paddingVertical:8,borderRadius:14,alignItems:'center',marginTop:9},loadButtonText:{color:'#111',fontWeight:'700',fontSize:10},loadedButton:{backgroundColor:'#243a30'},loadedButtonText:{color:'#c6f0d9'},noModels:{justifyContent:'center',paddingHorizontal:6},runtimeStatus:{color:'#aeb8c3',fontSize:10,paddingHorizontal:17,paddingBottom:5},
+ pendingPanel:{marginHorizontal:16,marginBottom:10,padding:11,borderRadius:12,backgroundColor:'#202329',borderWidth:1,borderColor:'#39414c'},pendingTitle:{color:C.text,fontSize:12,fontWeight:'800',marginBottom:6},pendingRow:{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:6},pendingName:{color:'#e6e6eb',fontSize:10,fontWeight:'700'},pendingStatus:{color:C.muted,fontSize:9,marginTop:3},pendingCancel:{paddingHorizontal:12,paddingVertical:7,borderRadius:14,backgroundColor:'#383840'},pendingCancelText:{color:'#e4e4e8',fontSize:9,fontWeight:'700'},removeButton:{alignItems:'center',paddingVertical:6,marginTop:5},removeButtonText:{color:'#e5b1b1',fontSize:9,fontWeight:'700'},activeHint:{color:'#aab4c3',fontSize:9,textAlign:'center',marginTop:6},
  benchmarkCard:{marginHorizontal:16,marginBottom:12,padding:12,borderRadius:13,backgroundColor:'#202329',borderWidth:1,borderColor:'#39414c'},
  benchmarkTop:{flexDirection:'row',alignItems:'center',gap:10},benchmarkTitle:{color:C.text,fontSize:12,fontWeight:'800'},
  benchmarkSub:{color:C.muted,fontSize:10,lineHeight:15,marginTop:4},benchmarkButton:{backgroundColor:'#e9e9ee',paddingHorizontal:16,paddingVertical:9,borderRadius:18},benchmarkButtonText:{color:'#111',fontSize:11,fontWeight:'800'},
