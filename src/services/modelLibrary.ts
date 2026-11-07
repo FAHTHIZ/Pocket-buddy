@@ -60,10 +60,21 @@ async function savePendingModelDownload(item:PendingModelDownload):Promise<void>
 async function forgetPendingModelDownload(id:string):Promise<void>{
  const current=await listPendingModelDownloads();await AsyncStorage.setItem(DOWNLOADS_KEY,JSON.stringify(current.filter(item=>item.downloadId!==id)));
 }
+export class ModelDownloadCancelledError extends Error{
+ constructor(){super('Model download was cancelled.');this.name='ModelDownloadCancelledError';}
+}
+const activeDownloadIds=new Set<string>(),cancelledDownloadIds=new Set<string>();
 export async function cancelModelDownload(id:string):Promise<void>{
  if(!Native?.cancelDownload)throw new Error('Android download cancellation is unavailable.');
- await Native.cancelDownload(id);
- await forgetPendingModelDownload(id);
+ const active=activeDownloadIds.has(id);
+ if(active)cancelledDownloadIds.add(id);
+ try{
+  await Native.cancelDownload(id);
+  await forgetPendingModelDownload(id);
+ }catch(error){
+  if(active)cancelledDownloadIds.delete(id);
+  throw error;
+ }
 }
 export async function refreshPendingModelDownloads():Promise<PendingModelDownloadState[]>{
  const pending=await listPendingModelDownloads(),results:PendingModelDownloadState[]=[];
@@ -100,12 +111,31 @@ function uniqueDownloadName(id:string,file:string):string{
 export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
  const encodedId=id.split('/').map(encodeURIComponent).join('/'),encodedFile=file.split('/').map(encodeURIComponent).join('/'),url='https://huggingface.co/'+encodedId+'/resolve/main/'+encodedFile;
- const result=await Native.startDownload(url,uniqueDownloadName(id,file),await hfHeaders());onId?.(result.downloadId);await savePendingModelDownload({downloadId:result.downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,startedAt:Date.now()});
- for(let attempt=0;attempt<6*60*60;attempt++){
-  const state=await Native.getDownloadStatus(result.downloadId);onProgress(Math.round(Math.max(0,Math.min(1,state.progress))*100));
-  if(state.status==='complete'){if(state.localPath){await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,addedAt:Date.now()});await forgetPendingModelDownload(result.downloadId);return state.localPath;}throw new Error('Android reports the download finished but did not return a readable model file path.');}
-  if(state.status==='failed'){await forgetPendingModelDownload(result.downloadId);throw new Error('Android download failed. System reason code: '+(state.reason??'unknown'));}
-  await wait(1000);
+ const result=await Native.startDownload(url,uniqueDownloadName(id,file),await hfHeaders()),downloadId=result.downloadId;
+ activeDownloadIds.add(downloadId);
+ try{
+  onId?.(downloadId);
+  await savePendingModelDownload({downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,startedAt:Date.now()});
+  for(let attempt=0;attempt<6*60*60;attempt++){
+   if(cancelledDownloadIds.has(downloadId))throw new ModelDownloadCancelledError();
+   let state:NativeDownloadStatus;
+   try{state=await Native.getDownloadStatus(downloadId);}
+   catch(error){if(cancelledDownloadIds.has(downloadId))throw new ModelDownloadCancelledError();throw error;}
+   if(cancelledDownloadIds.has(downloadId))throw new ModelDownloadCancelledError();
+   onProgress(Math.round(Math.max(0,Math.min(1,state.progress))*100));
+   if(state.status==='complete'){
+    if(state.localPath){
+     await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,addedAt:Date.now()});
+     await forgetPendingModelDownload(downloadId);return state.localPath;
+    }
+    throw new Error('Android reports the download finished but did not return a readable model file path.');
+   }
+   if(state.status==='failed'){await forgetPendingModelDownload(downloadId);throw new Error('Android download failed. System reason code: '+(state.reason??'unknown'));}
+   await wait(1000);
+  }
+  await Native.cancelDownload(downloadId);await forgetPendingModelDownload(downloadId);
+  throw new Error('Download monitoring timed out. The system transfer was cancelled.');
+ }finally{
+  activeDownloadIds.delete(downloadId);cancelledDownloadIds.delete(downloadId);
  }
- await Native.cancelDownload(result.downloadId);await forgetPendingModelDownload(result.downloadId);throw new Error('Download monitoring timed out. The system transfer was cancelled.');
 }

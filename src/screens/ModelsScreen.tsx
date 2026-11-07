@@ -1,7 +1,7 @@
 import React,{useEffect,useState}from'react';
 import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,type HubFile,type HubModel}from'../services/modelLibrary';
+import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,ModelDownloadCancelledError,type HubFile,type HubModel}from'../services/modelLibrary';
 import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark}from'../services/llm';
 import type{DeviceProfile,LocalBenchmark,LocalModelRecord,PendingModelDownloadState}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
@@ -16,7 +16,7 @@ const QUICK_PICKS:QuickPick[]=[
 export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  const[query,setQuery]=useState(''),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});
  const[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[device,setDevice]=useState<DeviceProfile|null>(null),[downloading,setDownloading]=useState('');
- const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]),[quickLoading,setQuickLoading]=useState('');
+ const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]),[quickLoading,setQuickLoading]=useState(''),[cancellingDownload,setCancellingDownload]=useState('');
  const refreshLibrary=async()=>{const [next,items]=await Promise.all([listInstalledModels(),refreshPendingModelDownloads()]);setInstalled(next);setPendingDownloads(items);};
  useEffect(()=>{getDeviceProfile().then(setDevice).catch(()=>{});AsyncStorage.getItem('pocket-buddy.local-model-uri').then(value=>setActivePath(value||'')).catch(()=>{});refreshLibrary().catch(()=>{});const timer=setInterval(()=>refreshLibrary().catch(()=>{}),3000);return()=>clearInterval(timer);},[]);
  useEffect(()=>{if(activePath)getModelBenchmark(activePath).then(setBenchmark).catch(()=>setBenchmark(null));else setBenchmark(null);},[activePath]);
@@ -29,9 +29,10 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
   ]);
  };
  const cancelPending=async(id:string)=>{
-  try{setBusy(true);await cancelModelDownload(id);await refreshLibrary();}
+  if(cancellingDownload)return;
+  try{setCancellingDownload(id);await cancelModelDownload(id);await refreshLibrary();}
   catch(error){Alert.alert('Could not cancel download',error instanceof Error?error.message:String(error));}
-  finally{setBusy(false);}
+  finally{setCancellingDownload('');}
  };
  const search=async()=>{try{setBusy(true);setModels(await searchHuggingFaceModels(query));}catch(e){Alert.alert('Search failed',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  const showFiles=async(id:string)=>{if(files[id]){setSelected(selected===id?'':id);return;}try{setBusy(true);const items=await getModelFiles(id);setFiles(old=>({...old,[id]:items}));setSelected(id);}catch(e){Alert.alert('Model files unavailable',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
@@ -47,7 +48,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
    const record:LocalModelRecord={id:modelId+'::'+file.name,modelId,name:modelName,fileName:file.name,path:uri,size:file.size,addedAt:Date.now()};
    setInstalled(await registerInstalledModel(record));await AsyncStorage.setItem('pocket-buddy.local-model-uri',uri);await AsyncStorage.setItem('pocket-buddy.active-model',modelName);
    await loadLocalModel(uri);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
-  }catch(e){Alert.alert('Could not install model',e instanceof Error?e.message:String(e));}finally{setBusy(false);setDownloading('');}};
+  }catch(e){if(!(e instanceof ModelDownloadCancelledError))Alert.alert('Could not install model',e instanceof Error?e.message:String(e));}finally{setBusy(false);setDownloading('');}};
   if(warnings.length){
    if(quickStart){
     await new Promise<void>(resolve=>Alert.alert('Check device compatibility',warnings.join('\n\n'),[
@@ -95,7 +96,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
     <Text style={s.pendingTitle}>Downloads</Text>
     {pendingDownloads.map(item=><View key={item.downloadId} style={s.pendingRow}>
      <View style={{flex:1}}><Text style={s.pendingName} numberOfLines={1}>{item.name} · {item.fileName}</Text><Text style={s.pendingStatus}>{item.status==='failed'?'Download failed':item.status==='unknown'?'Checking system download':item.status+' · '+Math.round(item.progress*100)+'%'}</Text></View>
-     {item.status!=='failed'?<Pressable disabled={busy} style={s.pendingCancel} onPress={()=>cancelPending(item.downloadId)}><Text style={s.pendingCancelText}>Cancel</Text></Pressable>:null}
+     {item.status!=='failed'?<Pressable disabled={cancellingDownload===item.downloadId} style={s.pendingCancel} onPress={()=>cancelPending(item.downloadId)}><Text style={s.pendingCancelText}>{cancellingDownload===item.downloadId?'Cancelling…':'Cancel'}</Text></Pressable>:null}
     </View>)}
    </View>:null}
    <View style={s.quickSection}>
