@@ -17,7 +17,7 @@ export default function MediaScreen({onBack}:Props){
    const items=await readMediaJobs();
    const [config,token]=await Promise.all([loadConfig(),getComfyToken()]);
    if(!mounted.current)return;
-   setBase(config.comfyUrl.replace(/\\/+$/,''));setComfyToken(token);
+   setBase(config.comfyUrl.replace(/\/+$/,''));setComfyToken(token);
    const active=items.filter(item=>item.status==='queued'||item.status==='running');
    if(active.length)await Promise.all(active.map(item=>refreshMediaJob(item.promptId).catch(()=>'')));
    const latest=await readMediaJobs();
@@ -55,7 +55,7 @@ export default function MediaScreen({onBack}:Props){
    return;
   }
   Linking.openURL(url).catch(()=>Alert.alert('Could not open output','Check that your ComfyUI server is reachable.'));
- };;
+ };
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backText}>‹</Text></Pressable><Text style={s.title}>Media library</Text><Pressable onPress={()=>reload()}><Text style={s.refresh}>Refresh</Text></Pressable></View>
   <View style={s.intro}><Text style={s.heading}>Your creations</Text><Text style={s.sub}>Image, video and audio jobs submitted from your conversations appear here. Status refreshes automatically while this screen is open.</Text></View>
