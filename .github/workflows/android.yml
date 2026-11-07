@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: pocket-buddy-android-v4-${{ github.ref }}
+  group: pocket-buddy-android-v5-${{ github.ref }}
   cancel-in-progress: false
 
 env:
