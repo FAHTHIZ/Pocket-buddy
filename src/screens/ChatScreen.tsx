@@ -5,20 +5,20 @@ import type{ChatMessage}from'../types';
 
 const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa',blue:'#9fc0ff'};
 type Props={
- messages:ChatMessage[];onSend:(text:string)=>void;busy:boolean;status:string;modelName:string;
+ messages:ChatMessage[];onSend:(text:string)=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
  needsSetup:boolean;onConnectProvider:(url:string,key:string,model:string)=>Promise<void>;
 };
 export default function ChatScreen(p:Props){
- const[draft,setDraft]=useState(''),[actions,setActions]=useState(false);
+ const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null);
  const[providerUrl,setProviderUrl]=useState('https://api.openai.com/v1');
  const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState('');
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
- const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;setDraft('');p.onSend(value);};
+ const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
  const connect=async()=>{
   if(!providerUrl.trim()){setConnectError('Paste your provider URL first.');return;}
   setConnecting(true);setConnectError('');
@@ -63,17 +63,22 @@ export default function ChatScreen(p:Props){
      <Pressable style={s.suggestion} onPress={()=>setDraft('Create an image of ')}><Text style={s.suggestionText}>Create images and videos</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
     </View>}
    </ScrollView>:<FlatList ref={list} style={s.messages} contentContainerStyle={s.messageList} data={p.messages} keyExtractor={m=>m.id}
-    renderItem={({item})=><View style={[s.messageRow,item.role==='user'?s.userRow:s.assistantRow]}>
+    renderItem={({item,index})=><View style={[s.messageRow,item.role==='user'?s.userRow:s.assistantRow]}>
       {item.role==='assistant'&&<View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View>}
       <View style={[s.bubble,item.role==='user'?s.userBubble:s.assistantBubble]}>
        <Markdown style={markdown} onLinkPress={url=>{Linking.openURL(url).catch(()=>{});return false;}}>{item.content}</Markdown>
        {item.error&&<Text style={s.error}>This response may be incomplete. You can retry your request.</Text>}
-       {item.role==='assistant'?<Pressable style={s.speechButton} onPress={()=>p.onSpeak(item.content)}><Text style={s.speechButtonText}>◖  Read aloud</Text></Pressable>:null}
+       {item.role==='assistant'?<View style={s.messageActions}>
+        <Pressable style={s.messageAction} onPress={()=>p.onCopy(item.content)}><Text style={s.messageActionText}>Copy</Text></Pressable>
+        <Pressable style={s.messageAction} onPress={()=>p.onSpeak(item.content)}><Text style={s.messageActionText}>Read aloud</Text></Pressable>
+        {index===p.messages.length-1?<Pressable style={s.messageAction} onPress={p.onRegenerate} disabled={p.busy}><Text style={s.messageActionText}>Regenerate</Text></Pressable>:null}
+       </View>:<Pressable style={s.messageAction} onPress={()=>{setDraft(item.content);setEditingId(item.id);}} disabled={p.busy}><Text style={s.messageActionText}>Edit</Text></Pressable>}
       </View>
      </View>}
     ListFooterComponent={p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
    />}
   <View style={s.composerWrap}>
+   {editingId?<View style={s.editingBanner}><Text style={s.editingText}>Editing this message. Sending replaces it and regenerates the reply.</Text><Pressable onPress={()=>{setEditingId(null);setDraft('');}}><Text style={s.editingCancel}>Cancel</Text></Pressable></View>:null}
    <View style={s.modelStrip}>
     <Pressable style={s.modelPill} onPress={p.onModels}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
     <Pressable style={[s.toolsPill,p.toolsEnabled&&s.toolsPillActive]} onPress={p.onToggleTools}><Text style={[s.toolsText,p.toolsEnabled&&s.toolsTextActive]}>✧ Tools {p.toolsEnabled?'On':'Off'}</Text></Pressable>
@@ -150,7 +155,8 @@ const s=StyleSheet.create({
  liveRow:{flexDirection:'row',gap:9,alignItems:'flex-start',paddingVertical:8},liveBubble:{flex:1,paddingRight:6},
  thinking:{paddingLeft:36,flexDirection:'row',alignItems:'center',gap:9,paddingVertical:10},thinkingText:{color:C.muted,fontSize:12},
  error:{color:'#f0a0a0',fontSize:11,marginTop:6},
- speechButton:{alignSelf:'flex-start',marginTop:5,paddingVertical:5,paddingHorizontal:9,borderRadius:14,backgroundColor:'#25252b'},speechButtonText:{color:'#c7d3eb',fontSize:10,fontWeight:'700'},
+ messageActions:{flexDirection:'row',flexWrap:'wrap',gap:7,marginTop:7},messageAction:{paddingVertical:5,paddingHorizontal:9,borderRadius:13,backgroundColor:'#25252b'},messageActionText:{color:'#c7d3eb',fontSize:10,fontWeight:'700'},
+ editingBanner:{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:10,paddingVertical:8,marginBottom:7,borderRadius:11,backgroundColor:'#25252b'},editingText:{color:'#d6d6df',fontSize:10,flex:1},editingCancel:{color:'#c7d3eb',fontSize:10,fontWeight:'700'},
  stopSpeech:{backgroundColor:'#3a2929',borderRadius:14,paddingHorizontal:10,paddingVertical:6},stopSpeechText:{color:'#f0c2c2',fontSize:10,fontWeight:'700'},
  composerWrap:{paddingHorizontal:12,paddingTop:7,paddingBottom:8,backgroundColor:C.bg},
  modelStrip:{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8,marginLeft:2},

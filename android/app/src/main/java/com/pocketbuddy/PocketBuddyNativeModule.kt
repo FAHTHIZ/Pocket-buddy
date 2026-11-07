@@ -3,6 +3,8 @@ package com.pocketbuddy
 import android.app.ActivityManager
 import android.app.DownloadManager
 import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -129,6 +131,27 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
     }
 
     @ReactMethod
+    fun deleteModelFile(path: String, promise: Promise) {
+        try {
+            val directory = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.canonicalFile
+                ?: throw IllegalStateException("The private model directory is unavailable.")
+            val target = File(path).canonicalFile
+            if (target.parentFile?.canonicalFile != directory || !target.name.endsWith(".gguf", ignoreCase = true)) {
+                promise.reject("INVALID_MODEL_PATH", "Only GGUF files in Pocket Buddy's private model directory can be deleted.")
+                return
+            }
+            if (!target.exists()) { promise.resolve(false); return }
+            if (!target.isFile || !target.delete()) {
+                promise.reject("MODEL_DELETE_FAILED", "Android could not delete this model file.")
+                return
+            }
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("MODEL_DELETE_FAILED", error)
+        }
+    }
+
+    @ReactMethod
     fun cancelDownload(downloadId: String, promise: Promise) {
         try {
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
@@ -168,6 +191,17 @@ class PocketBuddyNativeModule(private val context: ReactApplicationContext) : Re
         speechFile = null
         speechPromise?.resolve("stopped")
         speechPromise = null
+    }
+
+    @ReactMethod
+    fun copyToClipboard(text: String, promise: Promise) {
+        try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            clipboard.setPrimaryClip(ClipData.newPlainText("Pocket Buddy", text.take(100000)))
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("CLIPBOARD_FAILED", error)
+        }
     }
 
     @ReactMethod

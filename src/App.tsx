@@ -13,6 +13,7 @@ import{getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/stor
 import{discoverAndTestProvider}from'./services/providerSetup';
 import{loadLocalModel,releaseLocalModel}from'./services/llm';
 import{readAloud,stopSpeech}from'./services/speech';
+import{copyToClipboard}from'./services/clipboard';
 import type{AppConfig,ChatMessage,Conversation}from'./types';
 
 type Screen='chat'|'connectors'|'models'|'settings'|'media';
@@ -102,11 +103,7 @@ function BuddyApp(){
   const detail=JSON.stringify(args).slice(0,650);
   Alert.alert('Allow this tool?',name+'\n\n'+detail,[{text:'Cancel',style:'cancel',onPress:()=>resolve(false)},{text:'Allow once',onPress:()=>resolve(true)}],{cancelable:false});
  });
- const send=async(text:string)=>{
-  if(busy)return;
-  const user:ChatMessage={id:'message-'+Date.now(),role:'user',content:text,createdAt:Date.now()};
-  const next=[...messages,user],id=activeId||'chat-'+Date.now().toString(36);
-  const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
+ const runTurn=async(id:string,next:ChatMessage[],title:string)=>{
   setActiveId(id);setMessages(next);setLiveText('');setBusy(true);setStatus('Thinking');
   try{await saveCurrent(id,next,title);}catch(error){setBootError('Chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
   try{
@@ -116,7 +113,7 @@ function BuddyApp(){
     if(event.type==='clear_tokens')setLiveText('');
     if(event.type==='tool_start')setStatus('Using '+event.name);
     if(event.type==='tool_result')setStatus('Reviewing tool result');
-   },confirmTool,toolsEnabled);
+   },confirmTool,toolsEnabled,id);
    const assistant:ChatMessage={id:'assistant-'+Date.now(),role:'assistant',content:answer,createdAt:Date.now()};
    const complete=[...next,assistant];setMessages(complete);setLiveText('');
    await saveCurrent(id,complete,title);
@@ -125,6 +122,35 @@ function BuddyApp(){
    const complete=[...next,assistant];setMessages(complete);setLiveText('');
    try{await saveCurrent(id,complete,title);}catch{}
   }finally{setBusy(false);setStatus('');}
+ };
+ const send=async(text:string)=>{
+  if(busy)return;
+  const user:ChatMessage={id:'message-'+Date.now(),role:'user',content:text,createdAt:Date.now()};
+  const next=[...messages,user],id=activeId||'chat-'+Date.now().toString(36);
+  const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
+  await runTurn(id,next,title);
+ };
+ const editAndSend=async(messageId:string,text:string)=>{
+  if(busy)return;
+  const index=messages.findIndex(message=>message.id===messageId&&message.role==='user');
+  if(index<0)return;
+  const edited={...messages[index],content:text,createdAt:Date.now()};
+  const next=[...messages.slice(0,index),edited],id=activeId||'chat-'+Date.now().toString(36);
+  const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
+  await runTurn(id,next,title);
+ };
+ const regenerate=async()=>{
+  if(busy)return;
+  let lastUserIndex=-1;
+  for(let index=0;index<messages.length;index++)if(messages[index].role==='user')lastUserIndex=index;
+  if(lastUserIndex<0)return;
+  const next=messages.slice(0,lastUserIndex+1),id=activeId||'chat-'+Date.now().toString(36);
+  const title=conversations.find(item=>item.id===id)?.title||'New chat';
+  await runTurn(id,next,title);
+ };
+ const copyMessage=async(text:string)=>{
+  try{await copyToClipboard(text);Alert.alert('Copied','Message copied to clipboard.');}
+  catch(error){Alert.alert('Could not copy',error instanceof Error?error.message:String(error));}
  };
  const connectProvider=async(url:string,key:string,model:string)=>{
   const result=await discoverAndTestProvider(url,key,model);
@@ -169,7 +195,7 @@ function BuddyApp(){
   }else{
    const uri=await AsyncStorage.getItem('pocket-buddy.local-model-uri');
    if(uri){
-    try{await loadLocalModel(uri);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
+    try{await loadLocalModel(uri,true);setModelName((await AsyncStorage.getItem('pocket-buddy.active-model'))||'Local model');setSetupComplete(true);}
     catch(e){setModelName('Local model unavailable');setSetupComplete(false);setBootError(e instanceof Error?e.message:String(e));}
    }else{setModelName('Choose a local model');setSetupComplete(false);}
   }
@@ -178,7 +204,7 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>setScreen('models')} onQuickAction={action=>setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat')}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}

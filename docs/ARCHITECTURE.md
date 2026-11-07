@@ -9,7 +9,7 @@ The client does not operate a hosted inference backend. Users configure local mo
 ## Layers
 
 1. Presentation: chat timeline, composer, streaming indicator, history drawer, model library, settings, connector hub and media library.
-2. Conversation state: message timeline, SQLite persistence, active model and agent activity.
+2. Conversation state: message timeline, SQLite persistence, active model, agent activity and rolling conversation summaries.
 3. Agent runtime: normalized tool schemas, bounded function-call loop, confirmation policy and direct media intent router.
 4. Capability registry: built-in deterministic tools plus user-connected MCP tools.
 5. Model adapters: llama.cpp via llama.rn or OpenAI-compatible chat completion endpoints.
@@ -48,7 +48,7 @@ The direct media intent router means an LLM does not need to know how to synthes
 
 ## Model adapters
 
-- Local: GGUF weights through llama.rn and llama.cpp. The first implementation uses conservative CPU inference defaults. GPU/NPU offload is not assumed; supported device/driver combinations need qualification.
+- Local: GGUF weights through llama.rn and llama.cpp. Users can configure context size and GPU layer offload. OpenCL is optional and device/quantization dependent; CPU remains the universal fallback.
 - Remote: OpenAI-compatible Chat Completions using a configurable base URL, model ID and API key. Streaming uses SSE; selected compatibility failures retry through non-streaming JSON.
 - Normalized response: assistant content plus structured function calls. The chat UI does not need to know which adapter produced the result.
 
@@ -88,7 +88,9 @@ The current adapter covers job submission, status and cancellation. A release-gr
 
 ## Storage
 
-- Conversations and messages: SQLite.
+- Conversations, messages and rolling context summaries: SQLite.
+- Installed model metadata: AsyncStorage; model weights: app-specific external files via Android DownloadManager.
+- Hugging Face read tokens: Android Keystore-backed secure storage.
 - Generation jobs: SQLite.
 - Provider/GitHub/ComfyUI/MCP secrets: Android Keystore-backed secure storage.
 - Model files: app-specific external files via Android DownloadManager.
