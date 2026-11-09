@@ -205,7 +205,9 @@ export function planInference(input: PlanInput): InferencePlan {
   else {
     const expertMb = Math.round(arch.expertBytes / 1048576), denseMb = Math.round(arch.denseBytes / 1048576);
     reasons.push(`Architecture ${arch.architecture} is MoE: ${arch.expertUsedCount} of ${arch.expertCount} experts per token, ${expertMb} MB experts + ${denseMb} MB dense.`);
-    const fits = weightsMb + 600 <= budgetMb;
+    // Battery Saver shrinks the budget, but streaming a model that would fit costs more I/O and power than holding it, so judge fit by the Balanced budget there.
+    const fitBudget = profile === 'battery' && memory ? Math.max(budgetMb, memoryBudgetMb(memory, 'balanced').budgetMb) : budgetMb;
+    const fits = weightsMb + 600 <= fitBudget;
     if (input.moeMode === 'off') reasons.push('MoE streaming is turned off in Settings.');
     else if (!input.moeEngineAvailable) reasons.push('The MoE streaming engine is not available on this phone (needs ARM64 and Android 10+).');
     else if (fits) reasons.push('The whole model fits in the RAM budget, so it runs fully in memory without streaming.');
