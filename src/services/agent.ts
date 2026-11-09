@@ -84,7 +84,7 @@ const VIDEO_NOUN='(?:videos?|clips?|animations?|movies?|reels?)';
 const AUDIO_NOUN='(?:audio|music|songs?|tracks?|beats?|tunes?|melod(?:y|ies)|soundtracks?|jingles?|sound effects?|sfx|voice ?overs?|narrations?|speech)';
 function cleanMediaPrompt(text:string):string{
  const stripped=text.trim()
-  .replace(/^(?:hey|hi|ok|okay|please|pls|can you|could you|would you|i want you to|i want|i need|i'd like|give me|show me|let's|lets)[\s,]+/gi,'')
+  .replace(/^(?:hey|hi|ok|okay|please|pls|can you|could you|would you|i want you to|i want|i need|i'd like|give me|show me|send me|get me|let's|lets)[\s,]+/gi,'')
   .replace(/^(?:please\s+)?(?:create|generate|make|draw|render|produce|paint|design|compose|sing|record|say|speak|narrate|read out)\s+(?:me\s+|us\s+)?/i,'')
   .replace(new RegExp('^(?:(?:\\d{1,2}|'+Object.keys(NUMBER_WORDS).join('|')+'|some|several|many|different|unique|new|short|cool|nice|beautiful|amazing|quick)\\s+)*(?:'+IMAGE_NOUN+'|'+VIDEO_NOUN+'|'+AUDIO_NOUN+')(?:\\s+(?:of|about|showing|with|for|where|that says|saying|that))?[\\s:,-]*','i'),'')
   .trim();
@@ -95,7 +95,8 @@ export function detectDirectMediaRequest(prompt:string):MediaRequest|null{
  if(!text||text.length>1200)return null;
  const verb=/^(?:(?:hey|hi|ok|okay|please|pls|can you|could you|would you|i want you to|i want|i need|i'd like|give me|show me)[\s,]+)*(?:create|generate|make|draw|render|produce|paint|design|compose|sing|record)\b/i.test(text);
  const imagine=/^(?:imagine|image of|picture of|photo of|draw)\b/i.test(text);
- if(!verb&&!imagine)return null;
+ const wants=new RegExp('^(?:(?:hey|hi|ok|okay|please|pls)[\\s,]+)*(?:i need|i want|i\'d like|give me|show me|send me|get me)\\s+(?:me\\s+)?(?:\\d{1,2}|'+Object.keys(NUMBER_WORDS).join('|')+')\\s+(?:\\w+\\s+)?(?:'+IMAGE_NOUN+'|'+VIDEO_NOUN+'|'+AUDIO_NOUN+')\\b(?!\\s+(?:recommendations?|ideas?|suggestions?|names?|tips?|lists?|apps?|sites?|editors?))','i').test(text);
+ if(!verb&&!imagine&&!wants)return null;
  const head=text.slice(0,140);
  const kind=new RegExp('\\b'+VIDEO_NOUN+'\\b','i').test(head)?'video':new RegExp('\\b'+AUDIO_NOUN+'\\b','i').test(head)||/^(?:sing|compose)\b/i.test(text)?'audio':new RegExp('\\b'+IMAGE_NOUN+'\\b','i').test(head)||imagine||/^draw\b/i.test(text)?'image':null;
  if(!kind)return null;
