@@ -86,6 +86,7 @@ fi
 DEV=$(lsblk -no pkname "$(findmnt -no SOURCE --target "$WORK")" 2>/dev/null | head -1); DEV=/dev/${DEV:-sda}
 log "MoE runs: MemoryMax=$MEM_BUDGET IOReadBandwidthMax=$DEV $EMMC_BW"
 IO_PROP=(-p "IOReadBandwidthMax=$DEV $EMMC_BW")
+[ -n "${EMMC_IOPS:-}" ] && IO_PROP+=(-p "IOReadIOPSMax=$DEV $EMMC_IOPS") && log "also capping read IOPS at $EMMC_IOPS"
 if ! sudo systemd-run --quiet --scope "${IO_PROP[@]}" true 2>/dev/null; then echo "io throttling unavailable; RAM limit only" | tee "$OUT/io-throttle-unavailable.txt"; IO_PROP=(); fi
 SCOPE=(sudo systemd-run --quiet --scope -p MemoryMax=$MEM_BUDGET -p MemorySwapMax=0 "${IO_PROP[@]}" --uid="$(id -u)" --gid="$(id -g)")
 echo key-for-bench > "$WORK/key"; echo '{"version":1,"about":"bench","models":[]}' > "$WORK/cat.json"
