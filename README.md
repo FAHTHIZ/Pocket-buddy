@@ -55,7 +55,7 @@ Every model in the pickers is labelled Free or Paid. Paid models draw pollen fro
 ## Speed, heavy models and your phone
 
 - **Everyday chat:** keep the default Qwen3.8 2B. It is a dense model, so it runs fully in memory on the normal llama.cpp engine. On a 6 GB phone it is the fastest option.
-- **Heavier, smarter answers:** Models → LFM2 8B-A1B Abliterated (MoE). On a 6 GB phone it does not fit in RAM, so Pocket Buddy streams its experts from storage. It works, but on eMMC storage (for example an Infinix Hot 10S / Helio G85) replies are slow and the first load takes minutes, so choose it for quality, not speed. On 12 GB+ phones it loads fully into memory and is much faster, with no settings to change.
+- **Heavier, smarter answers:** Models → LFM2 8B-A1B Abliterated (MoE). On a 6 GB phone it does not fit in RAM, so Pocket Buddy streams its experts from storage. Run Settings → Performance → Benchmark this phone once with it loaded: it also times memory-mapped loading and keeps whichever is faster on your phone. On eMMC storage (for example an Infinix Hot 10S / Helio G85), expect about 2 tokens per second or less and a load of a minute or more, so choose it for quality, not speed. On 12 GB+ phones it loads fully into memory and is much faster, with no settings to change.
 - **Settings → On-device → Performance** shows what was detected and why each setting was chosen. It has the profile picker, **Benchmark this phone** (previous settings against the adaptive engine, on your own phone) and **Measure storage speed**.
 - Measured numbers and how they were obtained: [docs/BENCHMARKS.md](docs/BENCHMARKS.md). How the engine works: [docs/ADAPTIVE_ENGINE.md](docs/ADAPTIVE_ENGINE.md).
 

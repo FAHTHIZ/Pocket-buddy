@@ -125,4 +125,4 @@ fi
 rm -rf "$WORK/bmdata"
 run_moe stream-explicit bmoe --moe-stream -c 4096 --temp 0.7 --top-p 0.9 -t "$CORES" --threads-batch "$CORES" --io-threads 2 --cache-mb 1636 --overlap
 run_moe stream-auto bmoe --moe-stream -c 4096 --temp 0.7 --top-p 0.9 --cache-mb auto --cache-floor-mb 512 --cache-ceil-mb 1636
-log "done"; cat "$OUT"/dense.jsonl "$OUT"/moe.jsonl
+log "done"; cat "$OUT"/dense.jsonl "$OUT"/moe.jsonl 2>/dev/null; true
