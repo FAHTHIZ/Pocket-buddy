@@ -9,6 +9,15 @@ on:
       emmc_bw:
         description: Read bandwidth limit emulating eMMC 5.1
         default: 250M
+      skip_dense:
+        description: Skip the dense runs (1) and measure only the MoE section
+        default: '0'
+      emmc_iops:
+        description: Optional read IOPS cap (empty = bandwidth cap only)
+        default: ''
+      skip_mmap:
+        description: Skip the memory-mapped MoE runs (1)
+        default: '0'
 
 permissions:
   contents: read
@@ -25,6 +34,10 @@ jobs:
         env:
           MEM_BUDGET: ${{ inputs.mem_budget }}
           EMMC_BW: ${{ inputs.emmc_bw }}
+          SKIP_DENSE: ${{ inputs.skip_dense }}
+          SKIP_MMAP: ${{ inputs.skip_mmap }}
+          EMMC_IOPS: ${{ inputs.emmc_iops }}
+          GH_TOKEN: ${{ github.token }}
           OUT: ${{ github.workspace }}/bench-results
         run: bash scripts/bench/run-arm64-bench.sh 2>&1 | tee bench-console.log
       - name: Summary

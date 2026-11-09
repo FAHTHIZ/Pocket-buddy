@@ -24,8 +24,16 @@ if [ ! -x llama.cpp/build/bin/llama-server ]; then
 fi
 LS=$WORK/llama.cpp/build/bin/llama-server; LB=$WORK/llama.cpp/build/bin/llama-bench
 log "fetching bmoe $BMOE_VER linux-aarch64"
-if [ ! -d bmoe ]; then mkdir bmoe && curl -fsSL "https://github.com/Helldez/BigMoeOnEdge/releases/download/v$BMOE_VER/bmoe-cli-v$BMOE_VER-linux-aarch64.tar.gz" | tar xz -C bmoe --strip-components=1; fi
-BS=$(find "$WORK/bmoe" -name bmoe-server -type f | head -1); BDIR=$(dirname "$BS")
+BTGZ=bmoe-cli-v$BMOE_VER-linux-aarch64.tar.gz
+for i in $(seq 1 8); do
+  [ -s "$BTGZ" ] && gzip -t "$BTGZ" 2>/dev/null && break
+  rm -f "$BTGZ"; curl -fsSL --retry 3 -o "$BTGZ" "https://github.com/Helldez/BigMoeOnEdge/releases/download/v$BMOE_VER/$BTGZ" \
+    || gh release download "v$BMOE_VER" -R Helldez/BigMoeOnEdge -p "$BTGZ" --clobber 2>/dev/null || sleep $((i*15))
+done
+rm -rf bmoe; mkdir bmoe && tar xzf "$BTGZ" -C bmoe
+BS=$(find "$WORK/bmoe" -name bmoe-server -type f | head -1)
+[ -n "$BS" ] || { echo "bmoe-server missing from $BTGZ" | tee "$OUT/bmoe-missing.txt"; exit 1; }
+chmod +x "$BS"; BDIR=$(dirname "$BS")
 log "fetching models"
 [ -f qwen.gguf ] || curl -fsSL -o qwen.gguf "$QWEN_URL"
 [ -f lfm.gguf ] || curl -fsSL -o lfm.gguf "$LFM_URL"
@@ -41,6 +49,7 @@ wait_http(){ for _ in $(seq 1 900); do curl -fs -H "Authorization: Bearer ${2:-x
 hwm(){ awk '/VmHWM/{print $2/1024}' "/proc/$1/status" 2>/dev/null || echo 0; }
 
 # ---------------- dense: Qwen3.8 2B ----------------
+if [ "${SKIP_DENSE:-0}" != 1 ]; then
 log "llama-bench thread sweep (dense)"
 "$LB" -m qwen.gguf -p 128 -n 64 -t $(seq -s, 1 "$CORES") -fa 0,1 -r 3 -o json > "$OUT/dense-llama-bench.json" 2> "$OUT/dense-llama-bench.err" || true
 BEST_T=$(python3 - "$OUT/dense-llama-bench.json" <<'PY'
@@ -71,25 +80,29 @@ run_dense existing -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
 # Same old settings but the tuned thread count, to separate the thread effect from the rest.
 run_dense existing-tuned-threads -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BEST_T" --no-warmup
 run_dense adaptive -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$BEST_T" -tb "$CORES"
+fi
 
 # ---------------- MoE: LFM2 8B-A1B under a 6 GB-phone budget ----------------
 DEV=$(lsblk -no pkname "$(findmnt -no SOURCE --target "$WORK")" 2>/dev/null | head -1); DEV=/dev/${DEV:-sda}
 log "MoE runs: MemoryMax=$MEM_BUDGET IOReadBandwidthMax=$DEV $EMMC_BW"
 IO_PROP=(-p "IOReadBandwidthMax=$DEV $EMMC_BW")
+[ -n "${EMMC_IOPS:-}" ] && IO_PROP+=(-p "IOReadIOPSMax=$DEV $EMMC_IOPS") && log "also capping read IOPS at $EMMC_IOPS"
 if ! sudo systemd-run --quiet --scope "${IO_PROP[@]}" true 2>/dev/null; then echo "io throttling unavailable; RAM limit only" | tee "$OUT/io-throttle-unavailable.txt"; IO_PROP=(); fi
 SCOPE=(sudo systemd-run --quiet --scope -p MemoryMax=$MEM_BUDGET -p MemorySwapMax=0 "${IO_PROP[@]}" --uid="$(id -u)" --gid="$(id -g)")
 echo key-for-bench > "$WORK/key"; echo '{"version":1,"about":"bench","models":[]}' > "$WORK/cat.json"
+PORT=8092
 run_moe(){ # label, kind(llama|bmoe), args...
   local label=$1 kind=$2; shift 2
+  PORT=$((PORT+1))  # a fresh port per run: TIME_WAIT sockets from the previous run can block bind()
   drop_caches; mkdir -p "$WORK/bmdata"
   local t0=$(date +%s.%N) url key=""
   if [ "$kind" = llama ]; then
-    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$(dirname "$LS")" "$LS" -m lfm.gguf --port 8092 --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
-    url=http://127.0.0.1:8092; wait_http $url/health || true
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$(dirname "$LS")" "$LS" -m lfm.gguf --port $PORT --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
+    url=http://127.0.0.1:$PORT; wait_http $url/health || true
   else
-    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port 8092 --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
-    url=http://127.0.0.1:8092; key=key-for-bench
-    for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; sleep 1; done
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port $PORT --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
+    url=http://127.0.0.1:$PORT; key=key-for-bench
+    for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; [ $_ -gt 15 ] && ! pgrep -f "port $PORT" >/dev/null && break; sleep 1; done
   fi
   local pid=$(pgrep -n -x llama-server || pgrep -n -x bmoe-server)
   local load=$(python3 -c "import time;print(round(time.time()-$t0,2))")
@@ -97,10 +110,16 @@ run_moe(){ # label, kind(llama|bmoe), args...
   local warm=$(timeout 1800 python3 "$HERE/chat_probe.py" $url "$key" "$PROMPT" 48 || echo '{"error":"request failed"}')
   local oom=$(grep -c -i "killed\|out of memory" "$OUT/moe-$label.log" || true)
   echo "{\"label\":\"$label\",\"load_s\":$load,\"peak_rss_mb\":$(hwm ${pid:-0}),\"oom_lines\":$oom,\"cold\":$cold,\"warm\":$warm}" >> "$OUT/moe.jsonl"
-  sudo pkill -f "port 8092"; sleep 3
+  sudo pkill -f "port $PORT"
+  for _ in $(seq 1 60); do ss -ltn | grep -q ":$PORT " || break; sleep 1; done
+  sudo pkill -9 -f "port $PORT" 2>/dev/null; sleep 2
 }
 : > "$OUT/moe.jsonl"
+if [ "${SKIP_MMAP:-0}" != 1 ]; then
 run_moe existing-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
+# The same mmap path with the adaptive thread/flash-attention settings, for a fair comparison.
+run_moe adaptive-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$CORES" -tb "$CORES" --no-warmup
+fi
 # Exactly the argument sets Pocket Buddy's planner emits for a 6 GB eMMC phone (Balanced, and Automatic).
 # The data folder is kept between the two runs, as on the phone, so the second launch can use the routing record.
 rm -rf "$WORK/bmdata"
