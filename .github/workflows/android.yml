@@ -28,7 +28,7 @@ env:
 jobs:
   checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -129,14 +129,26 @@ jobs:
           fi
           exit "$code"
 
+      - name: Cache pinned MoE streaming engine
+        if: success()
+        uses: actions/cache@v4
+        with:
+          path: android/.gradle/moe-engine
+          key: bigmoeonedge-0.40.2-b79fd8a8
+
       - name: Fetch pinned MoE streaming engine (BigMoeOnEdge v0.40.2)
         if: success()
         shell: bash
         run: |
           mkdir -p android/.gradle/moe-engine
           target=android/.gradle/moe-engine/bigmoeonedge-0.40.2.apk
-          curl -fsSL --retry 4 -o "$target" https://github.com/Helldez/BigMoeOnEdge/releases/download/v0.40.2/app-dev-release.apk
-          echo "b79fd8a83155b838819e0b1b368b1545469a9f51cac4e995be84e3eb5ae1a419  $target" | sha256sum -c -
+          sum=b79fd8a83155b838819e0b1b368b1545469a9f51cac4e995be84e3eb5ae1a419
+          if [ -f "$target" ] && echo "$sum  $target" | sha256sum -c - >/dev/null 2>&1; then echo "cached"; exit 0; fi
+          for attempt in 1 2 3 4 5 6 7 8; do
+            curl -fsSL --retry 3 --retry-all-errors --retry-delay 10 -o "$target" https://github.com/Helldez/BigMoeOnEdge/releases/download/v0.40.2/app-dev-release.apk && break
+            echo "download attempt $attempt failed; waiting"; sleep $((attempt * 20))
+          done
+          echo "$sum  $target" | sha256sum -c -
 
       - name: Build standalone ARM64 release APK
         if: success()
