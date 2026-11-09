@@ -2,13 +2,15 @@ import React,{useEffect,useState}from'react';
 import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,ModelDownloadCancelledError,type HubFile,type HubModel}from'../services/modelLibrary';
-import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark}from'../services/llm';
+import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark,moeEngineAvailable}from'../services/llm';
+import{inspectModel,type ModelArchitecture}from'../services/hardware';
 import type{DeviceProfile,LocalBenchmark,LocalModelRecord,PendingModelDownloadState}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
-type QuickPick={id:string;name:string;repo:string;fileName:string;sizeLabel:string;description:string;fitLabel:string;minRamMb:number};
+type QuickPick={id:string;name:string;repo:string;fileName:string;sizeLabel:string;description:string;fitLabel:string;minRamMb:number;moe?:boolean};
 export const QUICK_PICKS:QuickPick[]=[
  {id:'qwen3.8-2b-uncensored',name:'Qwen3.8 2B Uncensored',repo:'atakhadivi/Qwen3.8-2B-Uncensored-GGUF',fileName:'Qwen3.8-2B-Uncensored-Q4_K_M.gguf',sizeLabel:'~1.27 GB',description:'The default Pocket Buddy brain. Fast, unfiltered everyday chat with tool calling, so it can create images, video and audio for you. Runs fully offline.',fitLabel:'Default · recommended',minRamMb:0},
  {id:'qwen3.8-4b-heretic',name:'Qwen3.8 4B Heretic',repo:'mradermacher/Qwen3.8-4B-Heretic-i1-GGUF',fileName:'Qwen3.8-4B-Heretic.i1-Q4_K_M.gguf',sizeLabel:'~2.7 GB',description:'A bigger uncensored Qwen3.8 for flagship phones. Smarter answers and better writing, but slower and needs plenty of free memory.',fitLabel:'For 8 GB+ phones',minRamMb:5800},
+ {id:'lfm2.5-8b-a1b-abliterated',name:'LFM2.5 8B-A1B Abliterated (MoE)',repo:'mradermacher/Huihui-LFM2.5-8B-A1B-abliterated-i1-GGUF',fileName:'Huihui-LFM2.5-8B-A1B-abliterated.i1-IQ4_XS.gguf',sizeLabel:'~4.6 GB',description:'An uncensored 8B Mixture-of-Experts model (32 experts, 4 active per token). On 6 GB phones Pocket Buddy streams experts from storage with a bounded RAM cache instead of loading all 4.6 GB, so it fits but replies slowly – choose it for quality, not speed. Phones with more RAM run it fully in memory and much faster.',fitLabel:'Heavy · MoE streaming',minRamMb:5000,moe:true},
  {id:'qwen3-0.6b',name:'Qwen3 0.6B Lite',repo:'unsloth/Qwen3-0.6B-GGUF',fileName:'Qwen3-0.6B-Q4_K_M.gguf',sizeLabel:'~397 MB',description:'A tiny fallback for older or low-memory phones. Good for short questions; less capable than the default.',fitLabel:'Lightweight',minRamMb:0},
 ];
 export const DEFAULT_PICK_ID='qwen3.8-2b-uncensored';
@@ -21,6 +23,8 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
  const[query,setQuery]=useState(''),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});
  const[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[device,setDevice]=useState<DeviceProfile|null>(null),[downloading,setDownloading]=useState('');
  const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]),[quickLoading,setQuickLoading]=useState(''),[cancellingDownload,setCancellingDownload]=useState('');
+ const[arch,setArch]=useState<Record<string,ModelArchitecture|null>>({});
+ useEffect(()=>{installed.forEach(item=>{if(!(item.path in arch))inspectModel(item.path).then(a=>setArch(old=>({...old,[item.path]:a}))).catch(()=>setArch(old=>({...old,[item.path]:null})));});},[installed]);// eslint-disable-line react-hooks/exhaustive-deps
  const refreshLibrary=async()=>{const [next,items]=await Promise.all([listInstalledModels(),refreshPendingModelDownloads()]);setInstalled(next);setPendingDownloads(items);setLibraryReady(true);};
  useEffect(()=>{getDeviceProfile().then(setDevice).catch(()=>{});AsyncStorage.getItem('pocket-buddy.local-model-uri').then(value=>setActivePath(value||'')).catch(()=>{});refreshLibrary().catch(()=>{});const timer=setInterval(()=>refreshLibrary().catch(()=>{}),3000);return()=>clearInterval(timer);},[]);
  useEffect(()=>{if(activePath)getModelBenchmark(activePath).then(setBenchmark).catch(()=>setBenchmark(null));else setBenchmark(null);},[activePath]);
@@ -40,18 +44,20 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
  };
  const search=async()=>{try{setBusy(true);setModels(await searchHuggingFaceModels(query));}catch(e){Alert.alert('Search failed',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
  const showFiles=async(id:string)=>{if(files[id]){setSelected(selected===id?'':id);return;}try{setBusy(true);const items=await getModelFiles(id);setFiles(old=>({...old,[id]:items}));setSelected(id);}catch(e){Alert.alert('Model files unavailable',e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
- const activate=async(item:LocalModelRecord)=>{try{setBusy(true);await loadLocalModel(item.path);await AsyncStorage.setItem('pocket-buddy.local-model-uri',item.path);await AsyncStorage.setItem('pocket-buddy.active-model',item.name);setActivePath(item.path);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(item.name,item.path);}catch(error){Alert.alert('Could not load model',error instanceof Error?error.message:String(error));}finally{setBusy(false);}};
+ const activate=async(item:LocalModelRecord)=>{try{setBusy(true);await loadLocalModel(item.path,false,setRuntimeStatus);await AsyncStorage.setItem('pocket-buddy.local-model-uri',item.path);await AsyncStorage.setItem('pocket-buddy.active-model',item.name);setActivePath(item.path);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(item.name,item.path);}catch(error){Alert.alert('Could not load model',error instanceof Error?error.message:String(error));}finally{setBusy(false);}};
  const install=async(modelId:string,file:HubFile,quickStart=false,displayName?:string)=>{
   const free=device?.availableStorageMb||0,need=file.size?file.size/1048576:0,ram=device?.availableRamMb||0,warnings:string[]=[];
   if(need&&free&&need*1.15>free)warnings.push('The download may exceed available device storage.');
   const estimatedRuntimeMb=need*1.18+384;
   // GGUF weights and inference buffers are native allocations; Android's Java memoryClass is not a useful cap for them.
   const safeRamBudget=device?Math.max(0,(device.availableRamMb||0)*0.68):0;
-  if(need&&ram&&estimatedRuntimeMb>safeRamBudget)warnings.push('Rough fit estimate: this model may exceed the memory currently available to the phone after runtime and context overhead. Close other apps or choose a smaller model/context. This is a heuristic, not a guarantee.');
+  const moePick=QUICK_PICKS.some(p=>p.moe&&p.fileName===file.name)&&await moeEngineAvailable();
+  if(moePick&&need&&ram&&estimatedRuntimeMb>safeRamBudget)warnings.push('This Mixture-of-Experts model is larger than the free RAM, so Pocket Buddy will stream experts from storage with a bounded cache. It will work, but first load takes a few minutes and replies are slow on eMMC phones. The 2B default stays the fastest for chat.');
+  else if(need&&ram&&estimatedRuntimeMb>safeRamBudget)warnings.push('Rough fit estimate: this model may exceed the memory currently available to the phone after runtime and context overhead. Close other apps or choose a smaller model/context. This is a heuristic, not a guarantee.');
   const start=async()=>{try{setBusy(true);setDownloading(file.name);setProgress(0);const uri=await downloadModel(modelId,file.name,setProgress,undefined,file.size,file.sha256),modelName=displayName||modelId.split('/').pop()||'Local model';
    const record:LocalModelRecord={id:modelId+'::'+file.name,modelId,name:modelName,fileName:file.name,path:uri,size:file.size,sha256:file.sha256,addedAt:Date.now()};
    setInstalled(await registerInstalledModel(record));await AsyncStorage.setItem('pocket-buddy.local-model-uri',uri);await AsyncStorage.setItem('pocket-buddy.active-model',modelName);
-   await loadLocalModel(uri);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
+   await loadLocalModel(uri,false,setRuntimeStatus);setActivePath(uri);setRuntimeStatus(getLocalRuntimeStatus());onLoaded(modelName,uri);
   }catch(e){if(!(e instanceof ModelDownloadCancelledError))Alert.alert('Could not install model',e instanceof Error?e.message:String(e));}finally{setBusy(false);setDownloading('');}};
   if(warnings.length){
    if(quickStart){
@@ -151,7 +157,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
     {cloudModels.map(item=><Pressable key={item.model} disabled={!!cloudBusy} onPress={()=>useCloud(item)} style={s.cloudRow}><Text style={s.cloudName} numberOfLines={1}>{item.model}</Text><Text style={s.cloudLabel} numberOfLines={1}>{cloudBusy===item.model?'Connecting…':item.label}</Text></Pressable>)}
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
-    {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
+    {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}{arch[item.path]?' · '+(arch[item.path]!.isMoe?`MoE ${arch[item.path]!.expertUsedCount}/${arch[item.path]!.expertCount}`:'Dense'):''}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
      {item.path===activePath?<Text style={s.activeHint}>Switch to another model before deleting</Text>:<Pressable disabled={busy} style={s.removeButton} onPress={()=>removeModel(item)}><Text style={s.removeButtonText}>Remove download</Text></Pressable>}</View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}
    </ScrollView>
    {runtimeStatus?<Text style={s.runtimeStatus}>Last loaded runtime: {runtimeStatus}</Text>:null}

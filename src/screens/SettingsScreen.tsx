@@ -6,6 +6,7 @@ import{getPollinationsAccount,pollPollinationsSignIn,startPollinationsSignIn,ver
 import{useMediaModels}from'../components/MediaViews';
 import{testProviderConnection}from'../services/llm';
 import{testMediaSetup}from'../services/media';
+import PerformancePanel from'../components/PerformancePanel';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
 type Props={onBack:()=>void;onSaved:(config:AppConfig)=>void};
 export default function SettingsScreen({onBack,onSaved}:Props){
@@ -54,11 +55,10 @@ export default function SettingsScreen({onBack,onSaved}:Props){
     <Text style={s.helper}>Use an HTTPS OpenAI-compatible endpoint. Self-hosted endpoints that do not require authentication may leave the key blank. Your key is stored using Android secure storage.</Text>
     <Pressable style={s.testButton} onPress={testApi} disabled={testing}><Text style={s.testButtonText}>{testing?'Testing connection…':'Test API connection'}</Text></Pressable>
    </>:<View style={s.info}>
-    <Text style={s.infoTitle}>Local model mode</Text><Text style={s.helper}>Install a GGUF model from Models. Pocket Buddy uses llama.cpp through llama.rn. Runtime memory depends on model, context and quantization.</Text>
-    <Text style={s.label}>Context window</Text><View style={s.choiceRow}>{[2048,4096,8192,16384].map(value=><Pressable key={value} onPress={()=>patch({nCtx:value})} style={[s.choice,config.nCtx===value&&s.choiceActive]}><Text style={[s.choiceText,config.nCtx===value&&s.choiceTextActive]}>{(value/1024)+'K'}</Text></Pressable>)}</View>
-    <Text style={s.helper}>Larger context uses more RAM. Start at 2K on a 4 GB phone; try 4K on a 6 GB phone only if it remains stable.</Text>
+    <Text style={s.infoTitle}>Local model mode</Text><Text style={s.helper}>Install a GGUF model from Models. Pocket Buddy uses llama.cpp through llama.rn. Pocket Buddy detects this phone's hardware and the model's architecture, then picks threads, context, memory budget and engine automatically.</Text>
     <Text style={s.label}>GPU layer offload</Text><View style={s.choiceRow}>{[0,16,32,64,99].map(value=><Pressable key={value} onPress={()=>patch({nGpuLayers:value})} style={[s.choice,config.nGpuLayers===value&&s.choiceActive]}><Text style={[s.choiceText,config.nGpuLayers===value&&s.choiceTextActive]}>{value===0?'CPU':value===99?'Max':String(value)}</Text></Pressable>)}</View>
     <Text style={s.helper}>Android GPU acceleration is device and quantization dependent. llama.rn OpenCL support is limited to supported Qualcomm Adreno devices and Q4_0/Q6_K formats. A requested offload level does not guarantee it activated.</Text>
+    <PerformancePanel config={config} patch={patch}/>
    </View>}
    <Text style={[s.section,{marginTop:25}]}>MEDIA CREATION</Text>
    <View style={s.modeRow}>
