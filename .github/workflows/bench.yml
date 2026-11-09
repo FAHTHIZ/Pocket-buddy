@@ -12,6 +12,9 @@ on:
       skip_dense:
         description: Skip the dense runs (1) and measure only the MoE section
         default: '0'
+      skip_mmap:
+        description: Skip the memory-mapped MoE runs (1)
+        default: '0'
 
 permissions:
   contents: read
@@ -29,6 +32,7 @@ jobs:
           MEM_BUDGET: ${{ inputs.mem_budget }}
           EMMC_BW: ${{ inputs.emmc_bw }}
           SKIP_DENSE: ${{ inputs.skip_dense }}
+          SKIP_MMAP: ${{ inputs.skip_mmap }}
           GH_TOKEN: ${{ github.token }}
           OUT: ${{ github.workspace }}/bench-results
         run: bash scripts/bench/run-arm64-bench.sh 2>&1 | tee bench-console.log

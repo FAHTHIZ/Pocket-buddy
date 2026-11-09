@@ -89,17 +89,19 @@ IO_PROP=(-p "IOReadBandwidthMax=$DEV $EMMC_BW")
 if ! sudo systemd-run --quiet --scope "${IO_PROP[@]}" true 2>/dev/null; then echo "io throttling unavailable; RAM limit only" | tee "$OUT/io-throttle-unavailable.txt"; IO_PROP=(); fi
 SCOPE=(sudo systemd-run --quiet --scope -p MemoryMax=$MEM_BUDGET -p MemorySwapMax=0 "${IO_PROP[@]}" --uid="$(id -u)" --gid="$(id -g)")
 echo key-for-bench > "$WORK/key"; echo '{"version":1,"about":"bench","models":[]}' > "$WORK/cat.json"
+PORT=8092
 run_moe(){ # label, kind(llama|bmoe), args...
   local label=$1 kind=$2; shift 2
+  PORT=$((PORT+1))  # a fresh port per run: TIME_WAIT sockets from the previous run can block bind()
   drop_caches; mkdir -p "$WORK/bmdata"
   local t0=$(date +%s.%N) url key=""
   if [ "$kind" = llama ]; then
-    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$(dirname "$LS")" "$LS" -m lfm.gguf --port 8092 --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
-    url=http://127.0.0.1:8092; wait_http $url/health || true
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$(dirname "$LS")" "$LS" -m lfm.gguf --port $PORT --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
+    url=http://127.0.0.1:$PORT; wait_http $url/health || true
   else
-    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port 8092 --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
-    url=http://127.0.0.1:8092; key=key-for-bench
-    for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; sleep 1; done
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port $PORT --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
+    url=http://127.0.0.1:$PORT; key=key-for-bench
+    for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; [ $_ -gt 15 ] && ! pgrep -f "port $PORT" >/dev/null && break; sleep 1; done
   fi
   local pid=$(pgrep -n -x llama-server || pgrep -n -x bmoe-server)
   local load=$(python3 -c "import time;print(round(time.time()-$t0,2))")
@@ -107,14 +109,16 @@ run_moe(){ # label, kind(llama|bmoe), args...
   local warm=$(timeout 1800 python3 "$HERE/chat_probe.py" $url "$key" "$PROMPT" 48 || echo '{"error":"request failed"}')
   local oom=$(grep -c -i "killed\|out of memory" "$OUT/moe-$label.log" || true)
   echo "{\"label\":\"$label\",\"load_s\":$load,\"peak_rss_mb\":$(hwm ${pid:-0}),\"oom_lines\":$oom,\"cold\":$cold,\"warm\":$warm}" >> "$OUT/moe.jsonl"
-  sudo pkill -f "port 8092"
-  for _ in $(seq 1 60); do ss -ltn | grep -q ":8092 " || break; sleep 1; done
-  sudo pkill -9 -f "port 8092" 2>/dev/null; sleep 2
+  sudo pkill -f "port $PORT"
+  for _ in $(seq 1 60); do ss -ltn | grep -q ":$PORT " || break; sleep 1; done
+  sudo pkill -9 -f "port $PORT" 2>/dev/null; sleep 2
 }
 : > "$OUT/moe.jsonl"
+if [ "${SKIP_MMAP:-0}" != 1 ]; then
 run_moe existing-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
 # The same mmap path with the adaptive thread/flash-attention settings, for a fair comparison.
 run_moe adaptive-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$CORES" -tb "$CORES" --no-warmup
+fi
 # Exactly the argument sets Pocket Buddy's planner emits for a 6 GB eMMC phone (Balanced, and Automatic).
 # The data folder is kept between the two runs, as on the phone, so the second launch can use the routing record.
 rm -rf "$WORK/bmdata"
