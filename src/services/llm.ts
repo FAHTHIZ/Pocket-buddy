@@ -103,10 +103,21 @@ async function apiCompletion(config:AppConfig,messages:ModelMessage[],tools:Tool
  const key=await getProviderKey(),url=chatUrl(config),body=requestBody(config,messages,tools);
  try{return await streamRequest(url,key,body,onToken);}catch(error){if(error instanceof ProviderError&&[400,404,405,415,422,501].includes(error.status))return jsonFallback(url,key,body);throw error;}
 }
+const THINK=/<think>[\s\S]*?(<\/think>|$)/gi;
+export function stripThinking(text:string):string{return text.replace(THINK,'').trim();}
 async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{
- if(!localContext)throw new Error('No local GGUF model is loaded. Open Models and install one first.');
- const result=await localContext.completion({messages,...(tools.length?{tools:tools.map(item=>({type:item.type,function:item.function})),tool_choice:'auto'}:{}),n_predict:2048,temperature:config.temperature,stop:['</s>','<|end|>','<|eot_id|>','<|end_of_text|>','<|im_end|>','<|end_of_turn|>']},(event:any)=>{if(event.token)onToken?.(event.token);});
- return{content:result.text||'',toolCalls:normalizeToolCalls(result.tool_calls||[])};
+ if(!localContext)throw new Error('No chat model is loaded yet. Open Models to download Qwen3.8, or pick a cloud chat model.');
+ let shown='';
+ const emit=(visible:string)=>{const clean=stripThinking(visible);if(clean.length>shown.length&&clean.startsWith(shown)){onToken?.(clean.slice(shown.length));shown=clean;}};
+ const params:any={messages,...(tools.length?{tools:tools.map(item=>({type:item.type,function:item.function})),tool_choice:'auto'}:{}),jinja:true,enable_thinking:false,reasoning_format:'auto',n_predict:2048,temperature:config.temperature,top_p:0.9,penalty_repeat:1.05,stop:['</s>','<|end|>','<|eot_id|>','<|end_of_text|>','<|im_end|>','<|end_of_turn|>']};
+ const result:any=await localContext.completion(params,(event:any)=>{
+  if(typeof event.content==='string')emit(event.content);
+  else if(typeof event.accumulated_text==='string')emit(event.accumulated_text);
+  else if(event.token){shown+=event.token;onToken?.(event.token);}
+ });
+ const toolCalls=normalizeToolCalls(result.tool_calls||[]);
+ const content=stripThinking(typeof result.content==='string'&&(result.content||toolCalls.length)?result.content:String(result.text||''));
+ return{content:toolCalls.length?content:content.replace(/<tool_call>[\s\S]*?<\/tool_call>/g,'').trim(),toolCalls};
 }
 export async function complete(messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{const config=await loadConfig();return config.mode==='local'?localCompletion(config,messages,tools,onToken):apiCompletion(config,messages,tools,onToken);}
 export async function testProviderConnection():Promise<string>{const config=await loadConfig();if(config.mode!=='api')throw new Error('Switch to API provider mode to test this connection.');const result=await apiCompletion(config,[{role:'user',content:'Reply with the single word OK.'}],[]);return result.content.trim()||'The provider responded, but returned no text.';}

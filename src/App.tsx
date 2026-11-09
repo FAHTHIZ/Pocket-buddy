@@ -4,18 +4,18 @@ import{SafeAreaProvider,SafeAreaView}from'react-native-safe-area-context';
 import AsyncStorage from'@react-native-async-storage/async-storage';
 import ChatScreen from'./screens/ChatScreen';
 import ConnectorsScreen from'./screens/ConnectorsScreen';
-import ModelsScreen from'./screens/ModelsScreen';
+import ModelsScreen,{DEFAULT_PICK_ID,type CloudChoice}from'./screens/ModelsScreen';
 import SettingsScreen from'./screens/SettingsScreen';
 import MediaScreen from'./screens/MediaScreen';
 import{runAgent,type ConfirmTool}from'./services/agent';
 import{listConversations,saveConversation}from'./services/database';
-import{getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/storage';
+import{getPollinationsKey,getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/storage';
 import{discoverAndTestProvider}from'./services/providerSetup';
 import{loadLocalModel,releaseLocalModel}from'./services/llm';
 import{readAloud,stopSpeech}from'./services/speech';
 import{captureVoiceInput}from'./services/voiceInput';
 import{copyToClipboard}from'./services/clipboard';
-import type{AppConfig,ChatMessage,Conversation}from'./types';
+import type{AppConfig,ChatMessage,Conversation,MediaRequest,MessageAttachment}from'./types';
 
 type Screen='chat'|'connectors'|'models'|'settings'|'media';
 const C={bg:'#101012',panel:'#1f1f23',text:'#f4f4f5',muted:'#a1a1aa',line:'#34343b'};
@@ -24,6 +24,7 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
+ const[liveAttachments,setLiveAttachments]=useState<MessageAttachment[]>([]),[mediaProgress,setMediaProgress]=useState<{done:number;total:number}|null>(null),[autoStart,setAutoStart]=useState(''),[pollConnected,setPollConnected]=useState(false);
  const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false),[setupComplete,setSetupComplete]=useState(false),[restoringModel,setRestoringModel]=useState(false);
 
  useEffect(()=>{
@@ -86,6 +87,8 @@ function BuddyApp(){
   });
   return()=>{mounted=false;};
  },[ready]);
+ const refreshPollinations=()=>{getPollinationsKey().then(key=>setPollConnected(!!key)).catch(()=>setPollConnected(false));};
+ useEffect(()=>{refreshPollinations();},[screen]);
  useEffect(()=>{
   const sub=BackHandler.addEventListener('hardwareBackPress',()=>{
    if(menuOpen){setMenuOpen(false);return true;}
@@ -104,38 +107,49 @@ function BuddyApp(){
   const detail=JSON.stringify(args).slice(0,650);
   Alert.alert('Allow this tool?',name+'\n\n'+detail,[{text:'Cancel',style:'cancel',onPress:()=>resolve(false)},{text:'Allow once',onPress:()=>resolve(true)}],{cancelable:false});
  });
- const runTurn=async(id:string,next:ChatMessage[],title:string)=>{
-  setActiveId(id);setMessages(next);setLiveText('');setBusy(true);setStatus('Thinking');
+ const runTurn=async(id:string,next:ChatMessage[],title:string,mediaRequest?:MediaRequest)=>{
+  setActiveId(id);setMessages(next);setLiveText('');setLiveAttachments([]);setMediaProgress(null);setBusy(true);setStatus(mediaRequest?'Starting…':'Thinking');
   try{await saveCurrent(id,next,title);}catch(error){setBootError('Chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
   try{
-   let answer:string;
+   let answer:string,attachments:MessageAttachment[]=[];
    try{
-    answer=await runAgent(next,event=>{
+    const result=await runAgent(next,event=>{
+     if(event.type==='media'){setLiveAttachments(event.items);setMediaProgress({done:event.done,total:event.total});}
      if(event.type==='status')setStatus(event.message);
      if(event.type==='token')setLiveText(old=>old+event.token);
      if(event.type==='clear_tokens')setLiveText('');
      if(event.type==='tool_start')setStatus('Using '+event.name);
      if(event.type==='tool_result')setStatus('Reviewing tool result');
-    },confirmTool,toolsEnabled,id);
+    },confirmTool,toolsEnabled,id,mediaRequest);
+    answer=result.content;attachments=result.attachments;
    }catch(error){
     const assistant:ChatMessage={id:'assistant-error-'+Date.now(),role:'assistant',content:'I could not complete that request: '+(error instanceof Error?error.message:String(error)),createdAt:Date.now(),error:true};
-    const failed=[...next,assistant];setMessages(failed);setLiveText('');
+    const failed=[...next,assistant];setMessages(failed);setLiveText('');setLiveAttachments([]);
     try{await saveCurrent(id,failed,title);}
     catch(saveError){setBootError('The error response could not be saved: '+(saveError instanceof Error?saveError.message:String(saveError)));}
     return;
    }
-   const assistant:ChatMessage={id:'assistant-'+Date.now(),role:'assistant',content:answer,createdAt:Date.now()};
-   const complete=[...next,assistant];setMessages(complete);setLiveText('');
+   const assistant:ChatMessage={id:'assistant-'+Date.now(),role:'assistant',content:answer,createdAt:Date.now(),...(attachments.length?{attachments}:{})};
+   const complete=[...next,assistant];setMessages(complete);setLiveText('');setLiveAttachments([]);
    try{await saveCurrent(id,complete,title);}
    catch(error){setBootError('Your response was generated, but chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
-  }finally{setBusy(false);setStatus('');}
+  }finally{setBusy(false);setStatus('');setMediaProgress(null);}
  };
- const send=async(text:string)=>{
+ const send=async(text:string,mediaRequest?:MediaRequest)=>{
   if(busy)return;
   const user:ChatMessage={id:'message-'+Date.now(),role:'user',content:text,createdAt:Date.now()};
   const next=[...messages,user],id=activeId||'chat-'+Date.now().toString(36);
   const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
-  await runTurn(id,next,title);
+  await runTurn(id,next,title,mediaRequest);
+ };
+ const connectCloud=async(choice:CloudChoice)=>{
+  const key=choice.needsKey?await getPollinationsKey():'';
+  const current=config||await loadConfig();
+  const next={...current,mode:'api' as const,baseUrl:choice.baseUrl,model:choice.model};
+  await saveProviderKey(key);await saveConfig(next);
+  await AsyncStorage.setItem('pocket-buddy.setup-complete','true');
+  await releaseLocalModel();
+  setConfig(next);setModelName(choice.model==='openai'?'Cloud chat (free)':choice.model);setSetupComplete(true);setBootError('');setScreen('chat');
  };
  const editAndSend=async(messageId:string,text:string)=>{
   if(busy)return;
@@ -175,7 +189,7 @@ function BuddyApp(){
  };
  const playMessage=async(content:string)=>{try{setSpeechActive(true);await readAloud(content);}catch(error){Alert.alert('Voice playback unavailable',error instanceof Error?error.message:String(error));}finally{setSpeechActive(false);}};
  const stopVoice=async()=>{try{await stopSpeech();}catch{}finally{setSpeechActive(false);}};
- const newChat=()=>{if(busy)return;setActiveId('');setMessages([]);setLiveText('');setScreen('chat');setMenuOpen(false);};
+ const newChat=()=>{if(busy)return;setActiveId('');setMessages([]);setLiveText('');setLiveAttachments([]);setScreen('chat');setMenuOpen(false);};
  const openScreen=(value:Screen)=>{setScreen(value);setMenuOpen(false);};
  const chooseChat=(item:Conversation)=>{if(busy)return;setActiveId(item.id);setMessages(item.messages);setLiveText('');setScreen('chat');setMenuOpen(false);};
  const deleteChat=(item:Conversation)=>Alert.alert('Delete conversation?','This permanently removes the chat from this device.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{const{deleteConversation}=await import('./services/database');await deleteConversation(item.id);const next=conversations.filter(chat=>chat.id!==item.id);setConversations(next);if(activeId===item.id){setActiveId('');setMessages([]);}}}]);
@@ -214,9 +228,9 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} liveAttachments={liveAttachments} mediaProgress={mediaProgress} pollinationsConnected={pollConnected} onGetDefaultModel={()=>{if(busy)return;setAutoStart(DEFAULT_PICK_ID);setScreen('models');}} onCloudChat={()=>connectCloud({label:'Cloud chat (free)',baseUrl:'https://text.pollinations.ai/openai',model:'openai',needsKey:false}).catch(error=>setBootError(String(error)))} onOpenSettings={()=>{if(!busy)setScreen('settings');}} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
-  {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded}/>}
+  {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded} autoStart={autoStart} onAutoStartHandled={()=>setAutoStart('')} onCloud={connectCloud}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
   {screen==='media'&&<MediaScreen onBack={()=>setScreen('chat')}/>}
   <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={()=>setMenuOpen(false)}>
@@ -233,7 +247,7 @@ function BuddyApp(){
      <ScrollView style={{flex:1}}>
       {conversations.map(item=><Pressable key={item.id} onPress={()=>chooseChat(item)} onLongPress={()=>deleteChat(item)} style={[s.chatLink,item.id===activeId&&s.chatLinkActive]}><Text style={s.chatLinkText} numberOfLines={1}>{item.title}</Text></Pressable>)}
      </ScrollView>
-     <View style={s.footer}><Text style={s.footerTitle}>Your AI, your choice</Text><Text style={s.footerText}>Local models and remote providers, controlled by you.</Text></View>
+     <View style={s.footer}><Text style={s.footerTitle}>{pollConnected?'Media: Pollinations connected':'Media: free images'}</Text><Text style={s.footerText}>{pollConnected?'Images, video, music and speech are ready.':'Connect Pollinations in Settings for faster images, video and music.'}</Text></View>
     </View>
    </View>
   </Modal>

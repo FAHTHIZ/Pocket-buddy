@@ -1,11 +1,14 @@
 import React,{useEffect,useRef,useState}from'react';
 import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import Markdown from'react-native-markdown-display';
-import type{ChatMessage}from'../types';
+import type{AppConfig,ChatMessage,MediaKind,MediaRequest,MessageAttachment}from'../types';
+import{AttachmentGallery,CreateOptions,modeLabel,modeToRequest,useMediaModels,type CreateMode}from'../components/MediaViews';
+import{detectDirectMediaRequest}from'../services/agent';
+import{loadConfig}from'../services/storage';
 
 const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa',blue:'#9fc0ff'};
 type Props={
- messages:ChatMessage[];onSend:(text:string)=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
+ messages:ChatMessage[];onSend:(text:string,media?:MediaRequest)=>void;liveAttachments:MessageAttachment[];mediaProgress:{done:number;total:number}|null;pollinationsConnected:boolean;onGetDefaultModel:()=>void;onCloudChat:()=>void;onOpenSettings:()=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
@@ -17,8 +20,23 @@ export default function ChatScreen(p:Props){
  const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState(''),[showProviderSetup,setShowProviderSetup]=useState(false);
  const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
  const list=useRef<FlatList<ChatMessage>>(null);
+ const models=useMediaModels();
+ const[createMode,setCreateMode]=useState<CreateMode|null>(null),[optionsOpen,setOptionsOpen]=useState(false);
+ const startCreate=async(kind:MediaKind)=>{
+  const config:AppConfig=await loadConfig();
+  const mode:CreateMode={kind,count:kind==='image'?4:1,model:kind==='image'?config.imageModel:kind==='video'?config.videoModel:config.musicModel,shape:kind==='video'&&config.imageShape==='square'?'landscape':config.imageShape,audioStyle:'music',duration:kind==='video'?config.videoDuration:0,voice:config.mediaVoice};
+  setCreateMode(mode);
+ };
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
- const send=()=>{const value=draft.trim();if(!value||p.busy||p.needsSetup||p.modelStarting)return;const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);};
+ const send=()=>{
+  const value=draft.trim();if(!value||p.busy||p.modelStarting)return;
+  if(createMode&&!editingId){setDraft('');p.onSend(value,modeToRequest(createMode,value));return;}
+  if(p.needsSetup&&!detectDirectMediaRequest(value)){
+   Alert.alert('Pick a chat model first','Images work right away (try “create 4 images of …” or tap ＋ → Create image). For chatting, get the default Qwen3.8 2B Uncensored model or use free cloud chat.',[{text:'Not now',style:'cancel'},{text:'Cloud chat',onPress:p.onCloudChat},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
+   return;
+  }
+  const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);
+ };
  const captureVoice=async()=>{
   try{setVoiceBusy(true);const transcript=await p.onVoiceInput();if(transcript.trim())setDraft(old=>old.trim()?old.trim()+' '+transcript.trim():transcript.trim());}
   catch(error){Alert.alert('Voice input unavailable',error instanceof Error?error.message:String(error));}
@@ -32,7 +50,7 @@ export default function ChatScreen(p:Props){
   catch(error){setConnectError(error instanceof Error?error.message:String(error));}
   finally{setConnecting(false);}
  };
- const quick=(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>{setActions(false);if(action==='image')setDraft('Create an image of ');else if(action==='video')setDraft('Create a video of ');else if(action==='audio')setDraft('Generate audio of ');else p.onQuickAction(action);};
+ const quick=(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>{setActions(false);if(action==='image'||action==='video'||action==='audio')void startCreate(action);else p.onQuickAction(action);};
  const empty=p.messages.length===0&&!p.liveText;
  return <KeyboardAvoidingView style={s.root} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={0}>
   <View style={s.topbar}>
@@ -47,17 +65,17 @@ export default function ChatScreen(p:Props){
     <Text style={s.welcomeTitle}>{p.needsSetup?'Your AI starts here':'What can I do for you today?'}</Text>
     <Text style={s.welcomeSubtitle}>{p.needsSetup?'Pick a model sized for this phone. Pocket Buddy downloads and loads it for you, or you can connect a provider.':'Your personal AI. Run a model on this phone or connect the provider you prefer.'}</Text>
     {p.modelStarting?<View style={s.setupCard}><ActivityIndicator color={C.blue}/><Text style={s.setupTitle}>Opening your model</Text><Text style={s.setupCopy}>Restoring the model you last used. Your downloaded weights and chats stay on this phone.</Text></View>:p.needsSetup?<View style={s.setupCard}>
-     <Text style={s.setupEyebrow}>QUICK SETUP · NO ACCOUNT NEEDED</Text>
-     <Text style={s.setupTitle}>Get your first model</Text>
-     <Text style={s.setupCopy}>Choose a model that fits this phone. Pocket Buddy will download it, load it and bring you straight into chat. Once downloaded, it can run offline.</Text>
-     <Pressable style={[s.connectButton,connecting&&s.connectButtonBusy]} onPress={()=>p.onQuickAction('models')} disabled={connecting}>
-      <Text style={s.connectButtonText}>Choose a model for this phone  →</Text>
-     </Pressable>
+     <Text style={s.setupEyebrow}>ONE TAP SETUP · NO ACCOUNT</Text>
+     <Text style={s.setupTitle}>Get Qwen3.8 2B Uncensored</Text>
+     <Text style={s.setupCopy}>The default Pocket Buddy brain (~1.3 GB). It downloads once, loads automatically and then runs offline on your phone.</Text>
+     <Pressable style={s.connectButton} onPress={p.onGetDefaultModel}><Text style={s.connectButtonText}>Download & start chatting  →</Text></Pressable>
+     <Pressable style={s.localButton} onPress={p.onCloudChat}><Text style={s.localButtonText}>Chat in the cloud now (no download)</Text></Pressable>
+     <Pressable style={s.localButton} onPress={()=>p.onQuickAction('models')}><Text style={s.localButtonText}>Choose another model</Text></Pressable>
      <Pressable style={s.localButton} onPress={()=>setShowProviderSetup(value=>!value)} disabled={connecting}>
-      <Text style={s.localButtonText}>{showProviderSetup?'Hide API provider setup':'Use an API provider instead'}</Text>
+      <Text style={s.localButtonText}>{showProviderSetup?'Hide API provider setup':'Use my own API provider'}</Text>
      </Pressable>
      {showProviderSetup?<View style={s.providerForm}>
-      <Text style={s.setupCopy}>Connect an OpenAI-compatible service. Some providers require a paid key; local models do not.</Text>
+      <Text style={s.setupCopy}>Connect any OpenAI-compatible service (OpenRouter, Groq, OpenAI, LM Studio…).</Text>
       <Text style={s.setupLabel}>Provider URL</Text>
       <TextInput value={providerUrl} onChangeText={setProviderUrl} placeholder="https://api.provider.com/v1" placeholderTextColor="#777781" autoCapitalize="none" autoCorrect={false} keyboardType="url" style={s.setupInput}/>
       <Text style={s.setupLabel}>API key <Text style={s.setupOptional}>(optional for private endpoints)</Text></Text>
@@ -69,17 +87,21 @@ export default function ChatScreen(p:Props){
        {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
       </Pressable>
      </View>:null}
-     <Text style={s.setupPrivacy}>Local model files and chats stay on this phone unless you choose a remote service.</Text>
+     <View style={s.mediaReady}><Text style={s.mediaReadyTitle}>Media works right now</Text><Text style={s.setupCopy}>Tap ＋ below → Create image, or type “create 4 images of a neon city”. {p.pollinationsConnected?'Pollinations is connected, so video and music are ready too.':'Connect Pollinations in Settings for video, music and faster images.'}</Text>
+      {!p.pollinationsConnected?<Pressable style={s.localButton} onPress={p.onOpenSettings}><Text style={s.localButtonText}>Connect Pollinations for video & music</Text></Pressable>:null}</View>
+     <Text style={s.setupPrivacy}>Local models and chats stay on this phone. Media prompts are sent to the media service you choose.</Text>
     </View>:<View style={s.suggestions}>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Explain a complex topic in simple terms')}><Text style={s.suggestionText}>Explain a complex topic</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
-     <Pressable style={s.suggestion} onPress={()=>setDraft('Search the web for the latest developments in ')}><Text style={s.suggestionText}>Search the web</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
-     <Pressable style={s.suggestion} onPress={()=>setDraft('Create an image of ')}><Text style={s.suggestionText}>Create images and videos</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
+     <Pressable style={s.suggestion} onPress={()=>{void startCreate('image');setDraft('a cozy cyberpunk ramen shop at night, rain, neon reflections');}}><Text style={s.suggestionText}>Create 4 images at once</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
+     <Pressable style={s.suggestion} onPress={()=>{void startCreate('video');setDraft('a drone shot flying over misty mountains at sunrise');}}><Text style={s.suggestionText}>Make a video</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
+     <Pressable style={s.suggestion} onPress={()=>{void startCreate('audio');setDraft('upbeat lofi hip hop beat with soft piano and rain');}}><Text style={s.suggestionText}>Make a song or beat</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
     </View>}
    </ScrollView>:<FlatList ref={list} style={s.messages} contentContainerStyle={s.messageList} data={p.messages} keyExtractor={m=>m.id}
     renderItem={({item,index})=><View style={[s.messageRow,item.role==='user'?s.userRow:s.assistantRow]}>
       {item.role==='assistant'&&<View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View>}
       <View style={[s.bubble,item.role==='user'?s.userBubble:s.assistantBubble]}>
        <Markdown style={markdown} onLinkPress={url=>{Linking.openURL(url).catch(()=>{});return false;}}>{item.content}</Markdown>
+       {item.attachments?.length?<AttachmentGallery items={item.attachments}/>:null}
        {item.error&&<Text style={s.error}>This response may be incomplete. You can retry your request.</Text>}
        {item.role==='assistant'?<View style={s.messageActions}>
         <Pressable style={s.messageAction} onPress={()=>p.onCopy(item.content)}><Text style={s.messageActionText}>Copy</Text></Pressable>
@@ -88,35 +110,40 @@ export default function ChatScreen(p:Props){
        </View>:<Pressable style={s.messageAction} onPress={()=>{setDraft(item.content);setEditingId(item.id);}} disabled={p.busy}><Text style={s.messageActionText}>Edit</Text></Pressable>}
       </View>
      </View>}
-    ListFooterComponent={p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
+    ListFooterComponent={p.busy&&p.mediaProgress?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><View style={s.thinkingInline}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Creating…'}</Text></View><AttachmentGallery items={p.liveAttachments} pending={Math.max(0,p.mediaProgress.total-p.liveAttachments.length)} /></View></View>:p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
    />}
   <View style={s.composerWrap}>
    {editingId?<View style={s.editingBanner}><Text style={s.editingText}>Editing this message. Sending replaces it and regenerates the reply.</Text><Pressable onPress={()=>{setEditingId(null);setDraft('');}}><Text style={s.editingCancel}>Cancel</Text></Pressable></View>:null}
+   {createMode?<View style={s.createChip}>
+    <Pressable style={{flex:1}} onPress={()=>setOptionsOpen(true)}><Text style={s.createChipText} numberOfLines={1}>{createMode.kind==='image'?'▧':createMode.kind==='video'?'▶':'♫'}  {modeLabel(createMode,models)}  ⌄</Text></Pressable>
+    <Pressable onPress={()=>setCreateMode(null)} style={s.createChipClose}><Text style={s.createChipCloseText}>✕</Text></Pressable>
+   </View>:null}
    <View style={s.modelStrip}>
     <Pressable style={[s.modelPill,p.busy&&s.disabledAction]} onPress={p.onModels} disabled={p.busy||p.modelStarting}><View style={s.modelDot}/><Text style={s.modelText} numberOfLines={1}>{p.modelName}</Text><Text style={s.modelChevron}>⌄</Text></Pressable>
     <Pressable style={[s.toolsPill,p.toolsEnabled&&s.toolsPillActive]} onPress={p.onToggleTools}><Text style={[s.toolsText,p.toolsEnabled&&s.toolsTextActive]}>✧ Tools {p.toolsEnabled?'On':'Off'}</Text></Pressable>
    </View>
    <View style={s.composer}>
-    <TextInput value={draft} onChangeText={setDraft} placeholder={p.needsSetup?"Connect an AI to start chatting":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.needsSetup&&!p.modelStarting} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
+    <TextInput value={draft} onChangeText={setDraft} placeholder={createMode?(createMode.kind==='image'?'Describe the image…':createMode.kind==='video'?'Describe the video…':createMode.audioStyle==='speech'?'Type what to say…':'Describe the sound or song…'):p.needsSetup?"Ask for images, or pick a chat model":"Message Pocket Buddy"} placeholderTextColor="#92929b" multiline maxLength={16000} editable={!p.busy&&!p.modelStarting} style={s.input} onSubmitEditing={send} blurOnSubmit={false}/>
     <View style={s.composerBottom}>
      <Pressable style={s.plusButton} onPress={()=>setActions(true)}><Text style={s.plus}>＋</Text></Pressable>
-     <Pressable style={[s.voiceButton,(voiceBusy||p.busy||p.needsSetup)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.needsSetup||p.modelStarting}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
-     <Text style={s.inputHint}>Local or API · Your choice</Text>
-     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.needsSetup||p.modelStarting)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.needsSetup||p.modelStarting}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
+     <Pressable style={[s.voiceButton,(voiceBusy||p.busy)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.modelStarting}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
+     <Text style={s.inputHint}>{createMode?'Tap the chip above for options':'Chat · images · video · audio'}</Text>
+     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.modelStarting)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.modelStarting}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
     </View>
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
   </View>
+  {optionsOpen&&createMode?<CreateOptions mode={createMode} models={models} connected={p.pollinationsConnected} onChange={setCreateMode} onClose={()=>setOptionsOpen(false)} onConnect={()=>{setOptionsOpen(false);p.onOpenSettings();}}/>:null}
   <Modal visible={actions} transparent animationType="fade" onRequestClose={()=>setActions(false)}>
    <Pressable style={s.modalShade} onPress={()=>setActions(false)}>
     <View style={s.actionSheet}>
      <Text style={s.sheetTitle}>Add to your session</Text>
-     <Action label="Generate image" detail="Use the built-in image workflow" icon="▧" onPress={()=>quick('image')}/>
-     <Action label="Generate video" detail="Create a video through your media engine" icon="▶" onPress={()=>quick('video')}/>
-     <Action label="Generate audio" detail="Create music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
+     <Action label="Create images" detail="1–20 images at once · free" icon="▧" onPress={()=>quick('image')}/>
+     <Action label="Create video" detail={p.pollinationsConnected?'Short clips with Wan, Veo, Seedance…':'Needs Pollinations connected'} icon="▶" onPress={()=>quick('video')}/>
+     <Action label="Create audio" detail="Music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
      <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')} disabled={p.busy}/>
      <Action label="Connectors" detail="GitHub, MCP and external tools" icon="⌘" onPress={()=>quick('connectors')}/>
-     <Action label="Media library" detail="Review generation jobs" icon="▤" onPress={()=>quick('gallery')}/>
+     <Action label="Media library" detail="Everything you have created" icon="▤" onPress={()=>quick('gallery')}/>
     </View>
    </Pressable>
   </Modal>
@@ -169,6 +196,7 @@ const s=StyleSheet.create({
  avatarGlyph:{color:'#f5f5f6',fontSize:16},bubble:{maxWidth:'88%',borderRadius:18,paddingHorizontal:13,paddingVertical:10},
  userBubble:{backgroundColor:'#29292f',borderTopRightRadius:5},assistantBubble:{backgroundColor:'transparent',paddingHorizontal:1,maxWidth:'90%'},
  liveRow:{flexDirection:'row',gap:9,alignItems:'flex-start',paddingVertical:8},liveBubble:{flex:1,paddingRight:6},
+ thinkingInline:{flexDirection:'row',alignItems:'center',gap:9,paddingVertical:4},createChip:{flexDirection:'row',alignItems:'center',backgroundColor:'#22293a',borderWidth:1,borderColor:'#3d4b6b',borderRadius:16,paddingLeft:12,marginBottom:8},createChipText:{color:'#dbe6ff',fontSize:12,fontWeight:'700',paddingVertical:9},createChipClose:{paddingHorizontal:13,paddingVertical:9},createChipCloseText:{color:'#aab7d6',fontSize:13},mediaReady:{borderTopWidth:1,borderTopColor:'#33333b',marginTop:6,paddingTop:10,marginBottom:6},mediaReadyTitle:{color:C.text,fontSize:13,fontWeight:'800'},
  thinking:{paddingLeft:36,flexDirection:'row',alignItems:'center',gap:9,paddingVertical:10},thinkingText:{color:C.muted,fontSize:12},
  error:{color:'#f0a0a0',fontSize:11,marginTop:6},
  messageActions:{flexDirection:'row',flexWrap:'wrap',gap:7,marginTop:7},messageAction:{paddingVertical:5,paddingHorizontal:9,borderRadius:13,backgroundColor:'#25252b'},messageActionText:{color:'#c7d3eb',fontSize:10,fontWeight:'700'},

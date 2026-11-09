@@ -4,7 +4,7 @@
 
 Pocket Buddy is a mobile-first personal AI workspace. The default surface is a single familiar chat session. Model management, connector setup and media jobs are dedicated secondary screens, not required steps for normal chat.
 
-The client does not operate a hosted inference backend. Users configure local models or remote endpoints themselves.
+The client does not operate a hosted inference backend. Chat runs on-device (default: Qwen3.8 2B Uncensored GGUF) or on a provider the user picks. Media is created by the built-in Pollinations engine (default) or a user-operated ComfyUI server.
 
 ## Layers
 
@@ -13,7 +13,7 @@ The client does not operate a hosted inference backend. Users configure local mo
 3. Agent runtime: normalized tool schemas, bounded function-call loop, confirmation policy and direct media intent router.
 4. Capability registry: built-in deterministic tools plus user-connected MCP tools.
 5. Model adapters: llama.cpp via llama.rn or OpenAI-compatible chat completion endpoints.
-6. Media adapters: ComfyUI workflow queue for image/video/audio jobs.
+6. Media adapters: `services/pollinations.ts` (device-flow sign-in, live model catalog, image/video/audio generation, async job polling) and `services/media.ts` (`createMedia` batch orchestrator with parallel workers and live progress; ComfyUI queue as the advanced engine). Native `PocketBuddyMedia` module streams results to app-private files, makes video thumbnails, plays audio/video, shares through a FileProvider and saves to MediaStore.
 7. Platform services: Android DownloadManager, hardware profile, thermal status, SQLite and secure credential store.
 
 ## Capability independence
@@ -23,9 +23,9 @@ The selected language model is not the capability host. Pocket Buddy registers i
 | Intent | Dispatcher |
 |---|---|
 | Text conversation | Selected LLM adapter |
-| Explicit image-generation request | App intent router → ComfyUI image workflow |
-| Explicit video-generation request | App intent router → ComfyUI video workflow
-| Explicit audio-generation request | App intent router → ComfyUI audio workflow |
+| Explicit image request ("create 4 images of…" or ＋ → Create images) | Intent router / composer mode → `createMedia` → Pollinations (or ComfyUI) |
+| Explicit video request | Intent router / composer mode → `createMedia` → Pollinations async video job |
+| Explicit audio request (music / speech / sfx) | Intent router / composer mode → `createMedia` → Pollinations audio |
 | Model-requested media operation | LLM tool call → media adapter |
 | Web search | Configured SearXNG |
 | Webpage reading | HTTPS reader |
@@ -37,14 +37,14 @@ The direct media intent router means an LLM does not need to know how to synthes
 ## Chat turn
 
     User → Chat UI → Intent Router
-      ├─ image/video intent → ComfyUI workflow → job ID → SQLite → UI
+      ├─ media intent or composer media mode → createMedia → files in filesDir/media → message attachments + Media library → UI
       └─ normal message → Agent → selected LLM + tool schemas
            ├─ final answer → SQLite → UI
            └─ tool call → confirmation policy → tool registry
                  ├─ SearXNG / webpage reader
                  ├─ GitHub REST
                  ├─ MCP server
-                 └─ ComfyUI media job
+                 └─ media tools → createMedia (attachments collected and shown inline)
               tool result → LLM → final answer
 
 ## Model adapters
@@ -111,3 +111,15 @@ Large transfers use Android DownloadManager so they can survive Activity recreat
 - Offline TTS: sherpa-onnx / ONNX Runtime.
 - Alternative LLM runtimes: MLC-LLM and ExecuTorch.
 - Additional media backends: provider adapters behind the same job interface.
+
+## Media pipeline
+
+- `MediaRequest {kind, prompt, count, model, shape, audioStyle, duration, voice}` comes from the composer chip, the direct intent router (`detectDirectMediaRequest`, which also strips phrases like "create 4 images of") or an LLM tool call.
+- `createMedia` resolves defaults from settings, runs up to 4 parallel workers for images when a Pollinations key is connected (sequential with countdown on the keyless endpoint) and 2 for video/audio, and emits `{type:'media', items, done, total}` events so the chat shows a grid that fills in live.
+- Each result becomes a `MessageAttachment` (file URI, MIME, thumbnail, prompt, model) stored on the assistant message and as a completed `generation_jobs` row, which powers the Media library.
+- Video uses `Prefer: respond-async` and polls `/v1/jobs/{id}` until `succeeded`, then downloads the result.
+- Pollinations sign-in uses the OAuth-style device flow (`/api/device/code` → browser approval → `/api/device/token`). Keys live in the Android Keystore.
+
+## Local inference details
+
+Local completions use the GGUF chat template through llama.rn's Jinja path (`jinja: true`) with `enable_thinking: false` and `reasoning_format: 'auto'`, so Qwen3.x thinking blocks are kept out of the visible reply; any stray `<think>` text is stripped defensively. Streaming uses the parsed `content` field so tool-call markup does not flash in the chat.

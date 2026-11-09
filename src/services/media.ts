@@ -1,6 +1,8 @@
-import{saveGenerationJob,listGenerationJobs,updateGenerationJob}from'./database';
-import{getComfyToken,loadConfig}from'./storage';
-import type{GenerationJob}from'../types';
+import{saveGenerationJob,listGenerationJobs,updateGenerationJob,deleteGenerationJob}from'./database';
+import{getComfyToken,getPollinationsKey,loadConfig}from'./storage';
+import type{AudioStyle,GenerationJob,MediaKind,MediaRequest,MessageAttachment}from'../types';
+import{generateAudio,generateImage,generateVideo,listMediaModels,type GeneratedFile}from'./pollinations';
+import{NativeModules}from'react-native';
 function replacePrompt(value:any,prompt:string):any{
  if(typeof value==='string')return value.replaceAll('{{prompt}}',prompt).replaceAll('__PROMPT__',prompt);
  if(Array.isArray(value))return value.map(item=>replacePrompt(item,prompt));
@@ -26,7 +28,6 @@ async function request(path:string,init:RequestInit={}):Promise<any>{
   throw error;
  }finally{clearTimeout(timeout);}
 }
-type MediaKind='image'|'video'|'audio';
 async function submitOne(kind:MediaKind,prompt:string):Promise<string>{
  const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:kind==='video'?config.videoWorkflow:config.audioWorkflow;
  if(!json.trim())throw new Error('Add an API-format '+kind+' workflow in Settings. Put {{prompt}} in its positive prompt text input.');
@@ -135,4 +136,83 @@ export async function cancelMediaJob(promptId:string):Promise<void>{
   throw new Error('The job finished before cancellation was confirmed.');
  }
  await updateGenerationJob(promptId,'cancelled');
+}
+
+// ---------- Built-in media engine (Pollinations) ----------
+export type MediaProgress=(update:{items:MessageAttachment[];done:number;total:number;status:string})=>void;
+export type MediaOutcome={attachments:MessageAttachment[];failures:string[];queued:GenerationJob[];engine:'pollinations'|'comfyui'};
+const LIMITS:Record<MediaKind,number>={image:20,video:4,audio:4};
+export function detectAudioStyle(text:string):AudioStyle{
+ if(/\b(say|speak|speech|voice ?over|narrat\w*|read (this|it|out)|tts|pronounce)\b/i.test(text))return 'speech';
+ if(/\b(sound effects?|sfx|foley|noise of|sound of)\b/i.test(text))return 'sfx';
+ return 'music';
+}
+async function runPool<T>(total:number,concurrency:number,task:(index:number)=>Promise<T>):Promise<void>{
+ let next=0;
+ const worker=async()=>{while(next<total){const index=next++;await task(index);}};
+ await Promise.all(Array.from({length:Math.max(1,Math.min(concurrency,total))},worker));
+}
+function toAttachment(kind:MediaKind,file:GeneratedFile,prompt:string,model:string,index:number):MessageAttachment{
+ const ext=file.path.split('.').pop()||'bin';
+ return{id:'media-'+Date.now().toString(36)+'-'+index+'-'+Math.random().toString(36).slice(2,7),name:kind+'-'+(index+1)+'.'+ext,uri:'file://'+file.path,mimeType:file.mimeType||(kind==='image'?'image/jpeg':kind==='video'?'video/mp4':'audio/mpeg'),size:file.size,kind,thumbnail:file.thumbnail?'file://'+file.thumbnail:undefined,prompt,model};
+}
+export async function createMedia(request:MediaRequest,onProgress?:MediaProgress):Promise<MediaOutcome>{
+ const config=await loadConfig();
+ const prompt=request.prompt.trim();
+ if(!prompt)throw new Error('Describe what you want to create.');
+ const total=Math.max(1,Math.min(LIMITS[request.kind],Math.floor(request.count)||1));
+ if(config.mediaEngine==='comfyui'&&config.comfyUrl.trim()){
+  const queued=await submitMediaJobs(request.kind,prompt,total);
+  return{attachments:[],failures:[],queued,engine:'comfyui'};
+ }
+ const key=await getPollinationsKey().catch(()=>'');
+ const style=request.kind==='audio'?(request.audioStyle||detectAudioStyle(prompt)):undefined;
+ const model=request.model||(request.kind==='image'?config.imageModel:request.kind==='video'?config.videoModel:style==='speech'?config.speechModel:style==='sfx'?config.sfxModel:config.musicModel);
+ const shape=request.shape||config.imageShape;
+ const catalog=request.kind==='video'?await listMediaModels().catch(()=>[]):[];
+ const items:MessageAttachment[]=[],failures:string[]=[];let done=0;
+ const label=request.kind==='image'?(total>1?'images':'image'):request.kind==='video'?(total>1?'videos':'video'):style==='speech'?'speech':style==='sfx'?'sound effect':'music';
+ const report=(status:string)=>onProgress?.({items:[...items],done,total,status});
+ report('Creating '+total+' '+label+'…');
+ const concurrency=request.kind==='image'?(key?4:1):2;
+ await runPool(total,concurrency,async index=>{
+  try{
+   const wait=(message:string)=>report(message+' ('+done+'/'+total+' ready)');
+   const file=request.kind==='image'?await generateImage(prompt,{model,shape},wait)
+    :request.kind==='video'?await generateVideo(prompt,{model,duration:request.duration||config.videoDuration,shape:shape==='square'?'landscape':shape,audio:config.videoAudio,catalog},wait)
+    :await generateAudio(prompt,{model,style:style||'music',voice:request.voice||config.mediaVoice,duration:request.duration},wait);
+   const attachment=toAttachment(request.kind,file,prompt,model,index);
+   items.push(attachment);
+   await saveGenerationJob({id:attachment.id,kind:request.kind,prompt,promptId:attachment.id,status:'complete',createdAt:Date.now(),outputs:[JSON.stringify(attachment)]}).catch(()=>{});
+  }catch(error){failures.push(error instanceof Error?error.message:String(error));}
+  finally{done++;report(done<total?'Created '+items.length+' of '+total+' '+label+'…':'Finishing…');}
+ });
+ if(!items.length)throw new Error(failures[0]||'Nothing was generated.');
+ return{attachments:items,failures,queued:[],engine:'pollinations'};
+}
+type NativeMediaControls={deleteMedia(path:string):Promise<boolean>;openMedia(path:string,mime:string):Promise<boolean>;shareMedia(path:string,mime:string):Promise<boolean>;saveToGallery(path:string,mime:string):Promise<string>;playAudio(path:string):Promise<string>;stopAudio():Promise<boolean>;playVideo(path:string,title:string):Promise<boolean>};
+const Controls=NativeModules.PocketBuddyMedia as NativeMediaControls|undefined;
+function controls():NativeMediaControls{if(!Controls?.openMedia)throw new Error('Media controls need the latest Pocket Buddy APK.');return Controls;}
+const filePath=(uri:string)=>uri.replace(/^file:\/\//,'');
+export const openAttachment=(item:MessageAttachment)=>controls().openMedia(filePath(item.uri),item.mimeType);
+export const shareAttachment=(item:MessageAttachment)=>controls().shareMedia(filePath(item.uri),item.mimeType);
+export const playVideoAttachment=(item:MessageAttachment)=>controls().playVideo(filePath(item.uri),item.prompt||'');
+export const playAudioAttachment=(item:MessageAttachment)=>controls().playAudio(filePath(item.uri));
+export const stopAudioPlayback=()=>Controls?.stopAudio?Controls.stopAudio():Promise.resolve(true);
+export async function saveAttachment(item:MessageAttachment):Promise<string>{
+ const {PermissionsAndroid,Platform}=require('react-native');
+ if(Platform.OS==='android'&&Number(Platform.Version)<29){
+  const granted=await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+  if(granted!==PermissionsAndroid.RESULTS.GRANTED)throw new Error('Storage permission is needed to save to the gallery on this Android version.');
+ }
+ return controls().saveToGallery(filePath(item.uri),item.mimeType);
+}
+export function attachmentFromJob(job:GenerationJob):MessageAttachment|null{
+ for(const raw of job.outputs){try{const value=JSON.parse(raw);if(value&&typeof value.uri==='string'&&value.uri.startsWith('file://'))return value as MessageAttachment;}catch{}}
+ return null;
+}
+export async function deleteLocalMedia(job:GenerationJob):Promise<void>{
+ const item=attachmentFromJob(job);
+ if(item&&Controls?.deleteMedia)await Controls.deleteMedia(filePath(item.uri)).catch(()=>false);
+ await deleteGenerationJob(job.id);
 }

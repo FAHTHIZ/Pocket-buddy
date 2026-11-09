@@ -1,8 +1,17 @@
-import type {ToolDefinition} from '../types';
+import type {MediaKind,MessageAttachment,ToolDefinition} from '../types';
 import {loadConfig,getGitHubToken} from './storage';
 import {callMcpTool,listMcpTools} from './mcp';
 import {createGitHubIssue,listGitHubIssues,readGitHubFile,searchGitHubRepositories} from './github';
-import {cancelMediaJob,refreshMediaJob,submitMediaJobs} from './media';
+import {cancelMediaJob,createMedia,detectAudioStyle,refreshMediaJob,type MediaProgress} from './media';
+export type ToolContext={onMedia?:MediaProgress;collect?:(items:MessageAttachment[])=>void};
+async function mediaTool(kind:MediaKind,args:Record<string,unknown>,count:number,context?:ToolContext):Promise<string>{
+ const prompt=String(args.prompt||'').trim();
+ const style=kind==='audio'?(['music','speech','sfx'].includes(String(args.style))?String(args.style) as any:detectAudioStyle(prompt)):undefined;
+ const outcome=await createMedia({kind,prompt,count,audioStyle:style},context?.onMedia);
+ if(outcome.engine==='comfyui')return 'Queued '+outcome.queued.length+' '+kind+' job(s) on ComfyUI: '+outcome.queued.map(job=>job.promptId).join(', ')+'. The user can follow them in the Media library.';
+ context?.collect?.(outcome.attachments);
+ return 'Created '+outcome.attachments.length+' '+kind+' file(s). They are already displayed to the user in the chat, so do not include links or markdown images. Briefly describe what was made.'+(outcome.failures.length?' '+outcome.failures.length+' failed: '+outcome.failures[0]:'');
+}
 
 function calculate(source:string):number{
  const expression=source.replace(/\s+/g,'');
@@ -47,10 +56,10 @@ const definitions:ToolDefinition[]=[
  {type:'function',function:{name:'current_time',description:'Get the current date, time and timezone of this device.',parameters:{type:'object',properties:{}}}},
  {type:'function',function:{name:'web_search',description:'Search the web using the connected SearXNG instance. Use for recent facts, research and sources.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}},
  {type:'function',function:{name:'read_webpage',description:'Read and extract text from a public HTTPS webpage. Pocket Buddy will ask the user to approve the URL before fetching it.',parameters:{type:'object',properties:{url:{type:'string'}},required:['url']}},requiresConfirmation:true},
- {type:'function',function:{name:'generate_image',description:'Generate one image through Pocket Buddy’s application-level media engine. Independent of the selected chat model.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
- {type:'function',function:{name:'generate_images',description:'Queue 1 to 20 images through the media engine. The selected chat model does not need native image generation.',parameters:{type:'object',properties:{prompt:{type:'string'},count:{type:'integer',minimum:1,maximum:20}},required:['prompt','count']}},requiresConfirmation:true},
- {type:'function',function:{name:'generate_video',description:'Generate a video through the configured media workflow. The selected chat model does not need native video generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
- {type:'function',function:{name:'generate_audio',description:'Generate audio through the configured audio workflow. The selected chat model does not need native audio generation.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_image',description:'Create one image from a detailed English prompt. Shown to the user automatically.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_images',description:'Create 1 to 20 image variations at once from a detailed English prompt. Shown to the user automatically.',parameters:{type:'object',properties:{prompt:{type:'string'},count:{type:'integer',minimum:1,maximum:20}},required:['prompt','count']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_video',description:'Create a short video clip from a detailed English prompt describing scene, motion and camera. Shown to the user automatically.',parameters:{type:'object',properties:{prompt:{type:'string'}},required:['prompt']}},requiresConfirmation:true},
+ {type:'function',function:{name:'generate_audio',description:'Create audio: style music (songs, beats, soundtracks; prompt describes genre, mood, instruments, optional lyrics), speech (prompt is the exact text to speak aloud) or sfx (a sound effect). Shown to the user automatically.',parameters:{type:'object',properties:{prompt:{type:'string'},style:{type:'string',enum:['music','speech','sfx']}},required:['prompt','style']}},requiresConfirmation:true},
  {type:'function',function:{name:'generation_status',description:'Check the status and output filenames for a ComfyUI generation job.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}}},
  {type:'function',function:{name:'cancel_generation',description:'Cancel a pending ComfyUI generation job. Requires confirmation and only works before execution begins.',parameters:{type:'object',properties:{prompt_id:{type:'string'}},required:['prompt_id']}},requiresConfirmation:true},
 ];
@@ -59,10 +68,12 @@ export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
  const result=definitions.filter(item=>{
   const name=item.function.name;
   if(['web_search','read_webpage'].includes(name))return config.useWebSearch&&!!config.searxngUrl.trim();
-  if(name==='generate_audio')return !!config.comfyUrl.trim()&&!!config.audioWorkflow.trim();
-  if(['generate_image','generate_images','generate_video','generation_status','cancel_generation'].includes(name))return !!config.comfyUrl.trim();
+  const comfy=config.mediaEngine==='comfyui'&&!!config.comfyUrl.trim();
+  if(name==='generate_audio')return config.mediaEngine==='pollinations'||(comfy&&!!config.audioWorkflow.trim());
+  if(['generate_image','generate_images','generate_video'].includes(name))return config.mediaEngine==='pollinations'||comfy;
+  if(['generation_status','cancel_generation'].includes(name))return comfy;
   return true;
- });
+ }).map(item=>config.mediaEngine==='pollinations'&&item.function.name.startsWith('generate_')?{...item,requiresConfirmation:false}:item);
  if(await getGitHubToken())result.push(
   {type:'function',function:{name:'github_search_repositories',description:'Search public and accessible GitHub repositories with the connected GitHub account.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}},
   {type:'function',function:{name:'github_read_file',description:'Read a file from a GitHub repository.',parameters:{type:'object',properties:{owner:{type:'string'},repo:{type:'string'},path:{type:'string'},ref:{type:'string'}},required:['owner','repo','path']}}},
@@ -71,17 +82,17 @@ export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
  );
  result.push(...await listMcpTools());return result;
 }
-export async function executeTool(name:string,args:Record<string,unknown>):Promise<string>{
+export async function executeTool(name:string,args:Record<string,unknown>,context?:ToolContext):Promise<string>{
  if(name.startsWith('mcp_'))return callMcpTool(name,args);
  switch(name){
   case 'calculator':return String(calculate(String(args.expression||'')));
   case 'current_time':return new Date().toString();
   case 'web_search':return webSearch(String(args.query||''));
   case 'read_webpage':return readWebpage(String(args.url||''));
-  case 'generate_image':{const jobs=await submitMediaJobs('image',String(args.prompt||''),1);return 'Image generation queued. Job ID: '+jobs[0].promptId;}
-  case 'generate_images':{const count=Math.max(1,Math.min(20,Number(args.count)||1));const jobs=await submitMediaJobs('image',String(args.prompt||''),count);return 'Queued '+jobs.length+' image jobs:\n'+jobs.map((job,index)=>(index+1)+'. '+job.promptId).join('\n');}
-  case 'generate_video':{const jobs=await submitMediaJobs('video',String(args.prompt||''),1);return 'Video generation queued. Job ID: '+jobs[0].promptId;}
-  case 'generate_audio':{const jobs=await submitMediaJobs('audio',String(args.prompt||''),1);return 'Audio generation queued. Job ID: '+jobs[0].promptId;}
+  case 'generate_image':return mediaTool('image',args,1,context);
+  case 'generate_images':return mediaTool('image',args,Math.max(1,Math.min(20,Number(args.count)||1)),context);
+  case 'generate_video':return mediaTool('video',args,1,context);
+  case 'generate_audio':return mediaTool('audio',args,1,context);
   case 'generation_status':return refreshMediaJob(String(args.prompt_id||''));
   case 'cancel_generation':await cancelMediaJob(String(args.prompt_id||''));return 'Generation job cancelled.';
   case 'github_search_repositories':return searchGitHubRepositories(String(args.query||''));

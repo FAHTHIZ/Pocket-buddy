@@ -1,43 +1,65 @@
 > **[Download Pocket Buddy for Android (ARM64 APK)](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
 >
-> The APK is published here only after the full Android validation workflow passes. **If the release link is not available yet, open the [Android validation workflow](https://github.com/FAHTHIZ/Pocket-buddy/actions/workflows/android.yml) and download `PocketBuddy.apk` from a successful run's validation artifact.**
->
-> Builds use a CI test-signing key, not a Play Store production signing identity.
+> Every push to `main` is built, launched on an Android emulator and published as a GitHub release only when that passes. If the link is not live yet, open the [Android workflow](https://github.com/FAHTHIZ/Pocket-buddy/actions/workflows/android.yml) and download `PocketBuddy.apk` from the latest successful run. Builds use a CI test-signing key, not a Play Store identity.
 
 # Pocket Buddy
 
-**One conversation. Your models. Your tools. Your media.**
+**A ChatGPT-style chat on your phone that can also create images, video, music and speech.**
 
-Pocket Buddy is an Android-first personal AI workspace. Its default experience is a familiar chat session, while the application independently manages local GGUF models, OpenAI-compatible providers, an agent/tool loop, MCP connectors and media-generation workflows.
+Pocket Buddy is an Android app in the spirit of PocketPal: install it, tap one button, and you are chatting with an uncensored model running entirely on your phone. Ask it for pictures, clips or songs in the same conversation and they appear right in the chat, ready to play, save to your gallery or share.
 
-> Development status: The first-run connection flow, standalone Android packaging and emulator launch smoke test are part of the build pipeline. Real-device inference, provider compatibility, MCP interoperability and configured media workflows still need device-level validation.
+## What you get
 
-## Product principles
+- **Default model: Qwen3.8 2B Uncensored** (GGUF, Q4_K_M, ~1.27 GB). One tap downloads it, loads it and starts the chat. After that it runs offline.
+- **Pick any model you like.** Curated picks (Qwen3.8 4B Heretic for 8 GB+ phones, Qwen3 0.6B Lite for older phones), any GGUF from Hugging Face via search, free cloud chat with no download, 200+ cloud models through Pollinations, or your own OpenAI-compatible provider.
+- **Many images at once.** Up to 20 images per request, generated in parallel and shown as a live-filling grid. Tap any image for a full-screen swipeable viewer with Save / Share / Open.
+- **Video.** Short clips (Wan 2.2, Veo 3.1, Seedance and others from the live catalog) with an in-app player.
+- **Audio.** Music and songs, text-to-speech with 11 voices, and sound effects, with an in-chat player.
+- **Media library.** Everything you create is kept on the phone, filterable by type, with save, share and delete.
+- Streaming Markdown chat, chat history, edit and regenerate, read aloud, voice dictation, tools (calculator, time, web search via SearXNG, webpage reader, GitHub, MCP connectors).
 
-- Chat first: one continuous conversation with streaming, Markdown, chat history and a compact composer.
-- Model independence: image/video tools are application capabilities, not features required inside the selected LLM. Explicit image/video prompts are routed by the app; model tool calls are also supported.
-- Bring your own AI: run a local GGUF model through llama.cpp/llama.rn or configure an OpenAI-compatible API endpoint.
-- Built-in agent: calculator, device time, web search, webpage reading, media generation and GitHub operations.
-- Extensible tools: connect remote MCP Streamable HTTP servers; remote actions request approval.
-- User-controlled data flow: conversations are local until a configured API, search server, MCP server or ComfyUI endpoint is invoked.
-- Phone-aware execution: inspect RAM, free storage and thermal state before recommending or loading models; automated throttling remains a device-validation task.
+## Using it
 
-## Current implementation
+1. Install the APK (allow "install unknown apps" for your browser or file manager if Android asks).
+2. Open Pocket Buddy and tap **Download & start chatting**. This fetches Qwen3.8 2B Uncensored and drops you into the chat when it is loaded. In a hurry? Tap **Chat in the cloud now** to start without downloading anything.
+3. Just talk to it. To create media, either:
+   - type naturally: "create 6 images of a samurai cat in neon Tokyo", "make a video of waves crashing at sunset", "make a lofi beat with rain", "say good morning in a calm voice"; or
+   - tap **＋** → **Create images / Create video / Create audio**. A chip appears above the composer, for example `Image ×4 · Z-Image Turbo`. Tap the chip to change the count (1–20), shape, model, length, audio type or voice. Then type your prompt and send.
+4. Optional but recommended: **Settings → Media creation → Connect Pollinations**. Your browser opens, you sign in to Pollinations and approve Pocket Buddy, and the app picks up the key automatically. You can also paste a key from [enter.pollinations.ai/keys](https://enter.pollinations.ai/keys).
 
-| Area | Implementation |
-|---|---|
-| App/UI | React Native 0.87.1, React 19.2.3, TypeScript, dark chat-first interface |
-| Local text models | llama.rn 0.13.0-rc.9, llama.cpp, GGUF |
-| Remote models | OpenAI-compatible Chat Completions, SSE streaming and JSON fallback |
-| Model discovery | Hugging Face Hub API, optional secure read token for gated access, installed-model library and Android DownloadManager |
-| Local storage | Nitro SQLite 10.2.0, async queries and transactions |
-| Secrets | react-native-keychain (Android Keystore-backed) |
-| Agent | Bounded multi-turn tool loop and direct media intent routing |
-| Web | User-configured SearXNG; public HTTPS webpage reader |
-| GitHub | User token, repository search, file reading, open issues and confirmation-gated issue creation |
-| MCP | Streamable HTTP initialization, tool listing and calls; remote calls require approval |
-| Media | ComfyUI API workflows for image, video and audio generation with persisted job tracking |
-| Android device data | Native profile: RAM, available storage, SoC, SDK and thermal status |
+Media requests go straight to the media engine, so they work even before you download a chat model, and they do not depend on the chat model being able to call tools. When the chat model does support tools (Qwen3.8 does), you can also ask in a roundabout way ("I need wallpapers for my phone, make me a few") and it will call the image tool itself.
+
+## What is free and what costs money
+
+Media is created by [Pollinations](https://pollinations.ai), an open generative-AI service. Pocket Buddy has no server of its own and no subscription.
+
+| Feature | Without an account | With a connected Pollinations account |
+|---|---|---|
+| Chat on the phone (GGUF) | Free, offline | Free, offline |
+| Cloud chat | Free (GPT-OSS 20B) | Many more models; free and paid |
+| Images | Free, about one every 45 seconds | Fast, 4 in parallel; free models (Z-Image Turbo, FLUX.1 Schnell, FLUX 1.1 Pro, DreamShaper, MAI Image…) plus paid ones |
+| Speech | — | Free models (OpenAI TTS, MAI Voice) |
+| Video | — | Paid with pollen (Wan 2.2 Fast is the cheapest) |
+| Music and sound effects | — | Paid with pollen |
+
+Every model in the pickers is labelled Free or Paid. Paid models draw pollen from your Pollinations balance. The sign-in from Pocket Buddy requests a key valid for up to a year with a 10-pollen spending cap; you can change the cap or revoke the key at any time on the Pollinations keys page.
+
+## About "uncensored"
+
+- The chat model runs on your phone, so nothing filters it. Qwen3.8 2B Uncensored is a community fine-tune ([atakhadivi/Qwen3.8-2B-Uncensored-GGUF](https://huggingface.co/atakhadivi/Qwen3.8-2B-Uncensored-GGUF)) built on the Qwen3.5 2B architecture. Qwen3.8 4B Heretic ([mradermacher/Qwen3.8-4B-Heretic-i1-GGUF](https://huggingface.co/mradermacher/Qwen3.8-4B-Heretic-i1-GGUF)) is a larger abliterated variant. The official Qwen3.8 releases are 27B+ and too large for phones.
+- Image, video and audio models run on Pollinations and the upstream providers. Pocket Buddy sends `safe=false` where the API supports it, but some providers (for example Google Veo and ElevenLabs) apply their own content policies, which the app cannot override. Open models such as Z-Image, FLUX and Wan are generally the least restrictive.
+- Generating video or music *on the phone itself* is not practical with current phone hardware, so those always use the cloud engine.
+
+## For heavy users: your own ComfyUI
+
+Settings → Media creation → **My ComfyUI server** sends image/video/audio jobs to a ComfyUI server you run (API-format workflow JSON with a `{{prompt}}` placeholder). Jobs are tracked in the Media library.
+
+## Agent tools
+
+- generate_image / generate_images (1–20) / generate_video / generate_audio (music, speech, sfx): shown inline in chat.
+- calculator, current_time, web_search (your SearXNG), read_webpage (asks first).
+- GitHub search, file read, issue list, issue create (asks first). MCP tools from connected servers (ask first).
+- generation_status / cancel_generation for ComfyUI jobs.
 
 ## Setup
 
@@ -88,64 +110,20 @@ Then run:
 
 Keep the keystore and passwords private, backed up securely, and out of Git. Without all four properties, Gradle produces an unsigned release APK.
 
-## First-run experience
+## Known limitations
 
-1. Open Pocket Buddy. The chat welcome screen appears first; chat-history restoration and local-model loading happen in the background.
-2. The primary action is **Choose a model for this phone**. Pocket Buddy detects physical RAM and available storage, then shows a short shelf of GGUF models with a suitable quantization already selected. Tap **Download & start**; the app downloads the model, adds it to the library, loads it and returns to the same chat screen automatically.
-3. The starter shelf includes Qwen3 0.6B Instruct (Q4_K_M, about 484 MB) and SmolLM2 360M Instruct (Q4_K_M, about 271 MB). Qwen3 1.7B Instruct (Q4_K_M, about 1.28 GB) is shown only when Android reports at least 5 GiB of physical RAM, targeting the 6 GB Hot 10S variant. These are initial recommendations, not a promise of a particular speed or successful inference on every Android device. The phone-aware fit warning still checks current free memory and storage before download.
-4. To use a remote provider instead, expand **Use an API provider instead** on the same welcome screen. Pocket Buddy tests the connection and discovers a model where the provider exposes `/models`; the key is stored using Android secure storage.
-5. The chat remains the main workspace. The model chip above the composer opens the model shelf for switching; Settings, Connectors and Media library are optional destinations in the side drawer. A Hugging Face read token in Settings enables downloads of gated models your account is permitted to access.
-
-A provider that does not expose `/models` can still be used by entering its exact model ID in the optional Model ID field. Provider URLs must be HTTPS and OpenAI-compatible. API keys are never accepted inside URLs.
-
-## Agent tools
-
-- calculator — safe arithmetic parser; no eval.
-- current_time — device-local date/time.
-- web_search — SearXNG search API.
-- read_webpage — retrieve and extract text from public HTTPS pages.
-- generate_image / generate_images — application-level image jobs.
-- generate_video — application-level video jobs.
-- generation_status / cancel_generation — ComfyUI job management.
-- github_search_repositories, github_read_file, github_list_issues — GitHub read tools.
-- github_create_issue — write operation with confirmation.
-- MCP tools — discovered from connected servers; remote tool calls require confirmation.
-
-The agent caps tool rounds and the number of calls per round. Older turns are summarized when the configured context budget is exceeded. The context allocator reserves separate space for the system prompt, summary and recent turns. Tool results and retrieved content are untrusted data.
-
-## Media generation
-
-A text-only LLM does not need native image/video generation. Pocket Buddy's application layer can directly route explicit generation requests and submit them to ComfyUI. The configured API workflow, model weights, custom nodes, compute capacity and provider limits determine what can actually be generated.
-
-For local image generation, stable-diffusion.cpp is a candidate for qualified devices, but automatic local diffusion is not enabled as a general promise until device/backend combinations pass Android benchmarks. Video generation is normally remote because current video models are too demanding for most phones.
-
-## Voice output
-
-Assistant messages have a **Read aloud** control. It uses the best matching voice installed on Android by default. To use neural speech, save an ElevenLabs API key and Voice ID in Settings. Only text you explicitly choose to read aloud is sent to that provider; usage credits may apply. See the [official Text-to-Speech API reference](https://elevenlabs.io/docs/api-reference/text-to-speech/convert).
-
-## Known limitations before production release
-
-- Real-device installation and inference validation is still required.
-- Local GGUF tool calling depends on the model's chat template and function-calling quality; explicit media requests bypass that requirement.
-- Model downloads use Android DownloadManager, validate the private destination path and verify the Hugging Face LFS SHA-256 checksum when the Hub exposes one. Files without published checksum metadata receive path/size checks only. Recovery after process death and real-device download behaviour still need device testing.
-- ComfyUI image, video and audio jobs are persisted and can be checked. Audio requires a separately configured audio workflow and compatible nodes/model weights. Settings includes a server/workflow-node preflight check; model-weight availability and successful generation still require a real test job. Image previews can send the saved bearer token in-app; opening token-protected video/audio files in external apps is not supported yet.
-- Search requires a user-configured SearXNG instance. There is no hidden Pocket Buddy search proxy.
-- MCP supports configured Streamable HTTP endpoints; OAuth connector UX, prompts/resources and full protocol conformance remain future work.
-- Thermal state is read, but automatic throttling/pause policies and benchmark-based recommendations still need hardware testing.
-- Older turns are summarized when context budget is exceeded. The summary is a compact memory aid, not a vector database or a guarantee that every earlier detail is retained.
-- Speech input uses the installed Android recognition service with an offline preference; actual offline support depends on that provider and language pack.
-- No API key, model weight, workflow or custom node is bundled.
+- On-device speed depends on the phone. On a mid-range phone the 2B default typically streams at a comfortable reading speed; the 4B model needs a flagship.
+- Without a Pollinations account, image batches are slow (about one image every 45 seconds, because the free endpoint is rate-limited per network).
+- Video and music cost pollen. If your balance or the key's spending cap runs out, the app shows Pollinations' error message; top up or raise the cap at enter.pollinations.ai.
+- Tool calling quality depends on the model. Direct requests ("create …", "make a video …") and the ＋ menu always work regardless of the model.
+- Web search needs your own SearXNG instance.
 
 ## Privacy and security
 
-- Provider, GitHub, ComfyUI and MCP credentials are stored in Android secure storage.
-- Local chat history is stored in app-private SQLite.
-- Remote providers receive conversation messages when used.
-- Search requests go to the configured SearXNG instance.
-- MCP servers receive tool arguments for the tools the user invokes.
-- ComfyUI receives prompts and workflow data for generation.
-- The webpage reader is a convenience feature, not a hardened SSRF/network sandbox.
-- Review third-party model, workflow and custom-node licensing before redistribution.
+- Chats and on-device model files stay on the phone (app-private SQLite and storage).
+- Media prompts go to Pollinations (or your ComfyUI server). Cloud chat prompts go to the provider you pick.
+- Keys (Pollinations, providers, GitHub, ComfyUI, Hugging Face, voice) are stored in Android Keystore-backed secure storage.
+- Generated files are stored privately in the app; Save copies them to your gallery under "Pocket Buddy".
 
 ## Documentation
 

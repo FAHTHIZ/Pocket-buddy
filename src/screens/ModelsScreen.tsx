@@ -5,19 +5,23 @@ import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,list
 import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark}from'../services/llm';
 import type{DeviceProfile,LocalBenchmark,LocalModelRecord,PendingModelDownloadState}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
-type Props={onBack:()=>void;onOpenSettings:()=>void;onLoaded:(name:string,uri:string)=>void};
-function bytesLabel(value?:number):string{return value?(value/1024/1024/1024).toFixed(2)+' GB':'Size unknown';}
 type QuickPick={id:string;name:string;repo:string;fileName:string;sizeLabel:string;description:string;fitLabel:string;minRamMb:number};
-const QUICK_PICKS:QuickPick[]=[
- {id:'qwen3-0.6b',name:'Qwen3 0.6B Instruct',repo:'tensorblock/Qwen_Qwen3-0.6B-GGUF',fileName:'Qwen3-0.6B-Q4_K_M.gguf',sizeLabel:'~484 MB',description:'A sensible first model for older Android phones. Good for short chats, summaries and everyday questions.',fitLabel:'Best starting point',minRamMb:3500},
- {id:'smollm2-360m',name:'SmolLM2 360M Instruct',repo:'bartowski/SmolLM2-360M-Instruct-GGUF',fileName:'SmolLM2-360M-Instruct-Q4_K_M.gguf',sizeLabel:'~271 MB',description:'The lightest download here. Choose this when keeping memory use and download size low matters most.',fitLabel:'Lightweight option',minRamMb:2500},
- {id:'qwen3-1.7b',name:'Qwen3 1.7B Instruct',repo:'tensorblock/Qwen_Qwen3-1.7B-GGUF',fileName:'Qwen3-1.7B-Q4_K_M.gguf',sizeLabel:'~1.28 GB',description:'A more capable but heavier option. Only shown on devices with about 6 GB RAM; it may run slowly or need a smaller context.',fitLabel:'For 6 GB devices · heavier',minRamMb:5120}
+export const QUICK_PICKS:QuickPick[]=[
+ {id:'qwen3.8-2b-uncensored',name:'Qwen3.8 2B Uncensored',repo:'atakhadivi/Qwen3.8-2B-Uncensored-GGUF',fileName:'Qwen3.8-2B-Uncensored-Q4_K_M.gguf',sizeLabel:'~1.27 GB',description:'The default Pocket Buddy brain. Fast, unfiltered everyday chat with tool calling, so it can create images, video and audio for you. Runs fully offline.',fitLabel:'Default · recommended',minRamMb:0},
+ {id:'qwen3.8-4b-heretic',name:'Qwen3.8 4B Heretic',repo:'mradermacher/Qwen3.8-4B-Heretic-i1-GGUF',fileName:'Qwen3.8-4B-Heretic.i1-Q4_K_M.gguf',sizeLabel:'~2.7 GB',description:'A bigger uncensored Qwen3.8 for flagship phones. Smarter answers and better writing, but slower and needs plenty of free memory.',fitLabel:'For 8 GB+ phones',minRamMb:5800},
+ {id:'qwen3-0.6b',name:'Qwen3 0.6B Lite',repo:'unsloth/Qwen3-0.6B-GGUF',fileName:'Qwen3-0.6B-Q4_K_M.gguf',sizeLabel:'~397 MB',description:'A tiny fallback for older or low-memory phones. Good for short questions; less capable than the default.',fitLabel:'Lightweight',minRamMb:0},
 ];
-export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
+export const DEFAULT_PICK_ID='qwen3.8-2b-uncensored';
+export type CloudChoice={label:string;baseUrl:string;model:string;needsKey:boolean};
+type Props={onBack:()=>void;onOpenSettings:()=>void;onLoaded:(name:string,uri:string)=>void;autoStart?:string;onAutoStartHandled?:()=>void;onCloud:(choice:CloudChoice)=>Promise<void>};
+function bytesLabel(value?:number):string{return value?(value/1024/1024/1024).toFixed(2)+' GB':'Size unknown';}
+export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,onAutoStartHandled,onCloud}:Props){
+ const[libraryReady,setLibraryReady]=useState(false);
+ const[cloudModels,setCloudModels]=useState<CloudChoice[]>([]),[cloudBusy,setCloudBusy]=useState('');
  const[query,setQuery]=useState(''),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});
  const[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[device,setDevice]=useState<DeviceProfile|null>(null),[downloading,setDownloading]=useState('');
  const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]),[quickLoading,setQuickLoading]=useState(''),[cancellingDownload,setCancellingDownload]=useState('');
- const refreshLibrary=async()=>{const [next,items]=await Promise.all([listInstalledModels(),refreshPendingModelDownloads()]);setInstalled(next);setPendingDownloads(items);};
+ const refreshLibrary=async()=>{const [next,items]=await Promise.all([listInstalledModels(),refreshPendingModelDownloads()]);setInstalled(next);setPendingDownloads(items);setLibraryReady(true);};
  useEffect(()=>{getDeviceProfile().then(setDevice).catch(()=>{});AsyncStorage.getItem('pocket-buddy.local-model-uri').then(value=>setActivePath(value||'')).catch(()=>{});refreshLibrary().catch(()=>{});const timer=setInterval(()=>refreshLibrary().catch(()=>{}),3000);return()=>clearInterval(timer);},[]);
  useEffect(()=>{if(activePath)getModelBenchmark(activePath).then(setBenchmark).catch(()=>setBenchmark(null));else setBenchmark(null);},[activePath]);
  const runBenchmark=async()=>{try{setBenchmarkBusy(true);const result=await runLocalBenchmark();await saveModelBenchmark(activePath,result);setBenchmark(result);}catch(error){Alert.alert('Benchmark failed',error instanceof Error?error.message:String(error));}finally{setBenchmarkBusy(false);}};
@@ -71,7 +75,27 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
   }catch(error){Alert.alert('Could not prepare model',error instanceof Error?error.message:String(error));}
   finally{setBusy(false);setQuickLoading('');}
  };
- const recommendedPicks=QUICK_PICKS.filter(item=>item.minRamMb<=(device?.totalRamMb||3500));
+ const recommendedPicks=QUICK_PICKS.filter(item=>item.minRamMb<=(device?.totalRamMb||99999)||item.id===DEFAULT_PICK_ID);
+ const[autoHandled,setAutoHandled]=useState(false);
+ useEffect(()=>{
+  if(!autoStart||autoHandled||busy||quickLoading||!libraryReady)return;
+  const pick=QUICK_PICKS.find(item=>item.id===autoStart);if(!pick){setAutoHandled(true);onAutoStartHandled?.();return;}
+  const timer=setTimeout(()=>{
+   setAutoHandled(true);onAutoStartHandled?.();
+   const existing=installed.find(entry=>entry.modelId===pick.repo&&entry.fileName===pick.fileName);
+   const pending=pendingDownloads.find(entry=>entry.modelId===pick.repo&&entry.fileName===pick.fileName);
+   if(pending)return;
+   if(existing)void activate(existing);else void quickInstall(pick);
+  },700);
+  return()=>clearTimeout(timer);
+ },[autoStart,autoHandled,installed,pendingDownloads,busy,quickLoading,libraryReady]);
+ useEffect(()=>{
+  fetch('https://gen.pollinations.ai/text/models').then(r=>r.ok?r.json():[]).then((items:any[])=>{
+   const list:CloudChoice[]=(Array.isArray(items)?items:[]).filter(item=>item&&typeof item.name==='string'&&(!item.output_modalities||item.output_modalities.includes('text'))).sort((a,b)=>Number(!!a.paid_only)-Number(!!b.paid_only)||Number(!String(b.name).includes('qwen'))-Number(!String(a.name).includes('qwen'))).slice(0,40).map(item=>({label:(item.paid_only?'Paid · ':'Free · ')+String(item.description||item.name).slice(0,60),baseUrl:'https://gen.pollinations.ai/v1',model:String(item.name),needsKey:true}));
+   setCloudModels(list);
+  }).catch(()=>{});
+ },[]);
+ const useCloud=async(choice:CloudChoice)=>{if(cloudBusy)return;try{setCloudBusy(choice.model);await onCloud(choice);}catch(error){Alert.alert('Could not switch to cloud chat',error instanceof Error?error.message:String(error));}finally{setCloudBusy('');}};
  const renderFile=(model:HubModel,file:HubFile)=>{
   const modelMb=file.size?file.size/1048576:0;
   const estimatedMb=modelMb*1.18+384;
@@ -88,7 +112,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backGlyph}>‹</Text></Pressable><Text style={s.title}>Models</Text><Pressable onPress={onOpenSettings}><Text style={s.settings}>Settings</Text></Pressable></View>
   <ScrollView style={s.content} contentContainerStyle={s.contentContainer} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-   <View style={s.intro}><Text style={s.heading}>Your models</Text><Text style={s.sub}>Pick a model sized for this phone. Download once, and Pocket Buddy loads it straight into your chat. No API key needed.</Text></View>
+   <View style={s.intro}><Text style={s.heading}>Your models</Text><Text style={s.sub}>Tap Download & start on Qwen3.8 2B Uncensored and you are ready. Download once, chat offline forever. Or pick any GGUF from Hugging Face below.</Text></View>
    {device?<View style={s.device}><Text style={s.deviceTitle}>{device.manufacturer} {device.model}</Text><Text style={s.deviceInfo}>{(device.totalRamMb/1024).toFixed(1)} GB RAM · {Math.round(device.availableRamMb)} MB free now · {Math.round(device.availableStorageMb)} MB free storage · {device.soc||'SoC unknown'}</Text></View>:null}
    {(busy||!!quickLoading)?<View style={s.progress}><ActivityIndicator color="#eee"/><Text style={s.progressText}>{downloading?'Downloading '+downloading:quickLoading?'Preparing your model…':'Working…'} {progress>0?progress+'%':''}</Text></View>:null}
    {downloading?<View style={s.progressTrack}><View style={[s.progressFill,{width:progress+'%'}]}/></View>:null}
@@ -115,7 +139,16 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded}:Props){
      </View>;
     })}
     {!recommendedPicks.length?<Text style={s.quickSubtitle}>Reading your phone's memory profile…</Text>:null}
-    {device?.totalRamMb?<Text style={s.quickFootnote}>Recommendations use detected physical RAM. The larger model is hidden on devices below 5 GB; actual speed and fit still depend on free memory, context size and thermal limits.</Text>:null}
+    {device?.totalRamMb?<Text style={s.quickFootnote}>Larger models are hidden on phones with less memory. Speed depends on your chip, free memory and context size.</Text>:null}
+   </View>
+   <View style={s.quickSection}>
+    <View style={s.quickHeading}><View style={{flex:1}}><Text style={s.quickTitle}>Cloud chat · no download</Text><Text style={s.quickSubtitle}>Runs on Pollinations servers. Start chatting instantly; your messages leave the phone.</Text></View><Text style={s.quickSpark}>☁</Text></View>
+    <View style={s.quickCard}>
+     <View style={s.quickCardTop}><View style={{flex:1}}><Text style={s.quickName}>Pollinations free chat</Text><Text style={s.quickMeta}>GPT-OSS 20B · free · no account</Text></View><View style={s.quickTag}><Text style={s.quickTagText}>Instant</Text></View></View>
+     <View style={s.quickCardBottom}><Text style={s.quickOffline}>Needs internet</Text><Pressable disabled={!!cloudBusy} style={[s.quickButton,!!cloudBusy&&s.quickButtonDisabled]} onPress={()=>useCloud({label:'Cloud chat (free)',baseUrl:'https://text.pollinations.ai/openai',model:'openai',needsKey:false})}><Text style={s.quickButtonText}>{cloudBusy==='openai'?'Connecting…':'Use cloud chat'}</Text></Pressable></View>
+    </View>
+    {cloudModels.length?<Text style={[s.quickSubtitle,{marginTop:10}]}>More cloud models (needs Pollinations connected in Settings):</Text>:null}
+    {cloudModels.map(item=><Pressable key={item.model} disabled={!!cloudBusy} onPress={()=>useCloud(item)} style={s.cloudRow}><Text style={s.cloudName} numberOfLines={1}>{item.model}</Text><Text style={s.cloudLabel} numberOfLines={1}>{cloudBusy===item.model?'Connecting…':item.label}</Text></Pressable>)}
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
     {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
@@ -148,6 +181,7 @@ const s=StyleSheet.create({
  quickTag:{backgroundColor:'#303640',borderRadius:10,paddingHorizontal:8,paddingVertical:5},quickTagText:{color:'#d1dbee',fontSize:8,fontWeight:'700'},
  quickDescription:{color:'#b7bdc8',fontSize:10,lineHeight:15,marginTop:8},quickCardBottom:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,marginTop:9},
  quickOffline:{color:'#99bca9',fontSize:8,flex:1},quickButton:{backgroundColor:'#e9edf5',borderRadius:15,paddingHorizontal:13,paddingVertical:9},quickButtonDisabled:{opacity:0.55},quickButtonText:{color:'#13171d',fontSize:9,fontWeight:'800'},
+ cloudRow:{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:9,borderTopWidth:1,borderTopColor:'#2c3139'},cloudName:{color:'#e6e9f0',fontSize:11,fontWeight:'700',flex:1},cloudLabel:{color:'#9aa3b1',fontSize:10,flex:1,textAlign:'right'},
  quickFootnote:{color:'#777f8b',fontSize:8,lineHeight:12,marginTop:8},
  header:{height:58,paddingHorizontal:16,flexDirection:'row',alignItems:'center',justifyContent:'space-between',borderBottomColor:'#25252b',borderBottomWidth:1},back:{width:40,height:40,borderRadius:20,backgroundColor:C.panel,alignItems:'center',justifyContent:'center'},backGlyph:{color:C.text,fontSize:30,marginTop:-3},title:{color:C.text,fontSize:17,fontWeight:'700'},settings:{color:'#bfcdf0',fontSize:12,fontWeight:'700',padding:8},
  intro:{paddingHorizontal:19,paddingTop:16,paddingBottom:8},heading:{color:C.text,fontSize:22,fontWeight:'700'},sub:{color:C.muted,fontSize:12,lineHeight:18,marginTop:5},installedList:{paddingHorizontal:15,paddingVertical:8,gap:9,minHeight:105},installedCard:{width:170,backgroundColor:C.panel,borderWidth:1,borderColor:C.line,borderRadius:13,padding:10},installedCardActive:{borderColor:'#6b9d86'},installedName:{color:C.text,fontSize:12,fontWeight:'700'},installedFile:{color:C.muted,fontSize:9,marginTop:5},installedSize:{color:'#8b8b95',fontSize:9,marginTop:4},loadButton:{backgroundColor:'#eee',paddingVertical:8,borderRadius:14,alignItems:'center',marginTop:9},loadButtonText:{color:'#111',fontWeight:'700',fontSize:10},loadedButton:{backgroundColor:'#243a30'},loadedButtonText:{color:'#c6f0d9'},noModels:{justifyContent:'center',paddingHorizontal:6},runtimeStatus:{color:'#aeb8c3',fontSize:10,paddingHorizontal:17,paddingBottom:5},

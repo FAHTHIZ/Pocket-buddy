@@ -13,6 +13,8 @@ This is the selected stack and extension inventory. Versions and licenses must b
 | Secure credentials | react-native-keychain | MIT; Android Keystore-backed credential storage |
 | Web search | SearXNG | AGPL-3.0-or-later; operate as a separate service |
 | Agent protocol | MCP | Protocol specification; SDK package licenses vary |
+| Built-in media engine | Pollinations (gen.pollinations.ai, enter.pollinations.ai) | Hosted API; free and pay-as-you-go (pollen) models; each upstream model keeps its own terms |
+| Default chat model | Qwen3.8 2B Uncensored GGUF (atakhadivi) | Apache-2.0 per model card; community fine-tune on Qwen3.5 2B |
 | Media workflow server | ComfyUI | GPL-3.0; separate server, not bundled into the Android app |
 | Local image candidate | stable-diffusion.cpp | MIT; candidate runtime, requires Android device qualification |
 | Speech recognition candidate | whisper.cpp | MIT; offline speech-to-text |
@@ -24,6 +26,7 @@ This is the selected stack and extension inventory. Versions and licenses must b
 
 ## Integration policy
 
+- Pollinations is called directly from the phone with the user's own key; Pocket Buddy runs no proxy.
 - Do not bundle ComfyUI into Pocket Buddy's APK. Connect to a separate user-operated server.
 - Do not bundle SearXNG into Pocket Buddy's APK. Use a configured user-operated instance.
 - Do not assume an open-source runtime license grants permission to redistribute model weights.
@@ -33,6 +36,9 @@ This is the selected stack and extension inventory. Versions and licenses must b
 - Review all connector permissions and side effects before marking a connector generally available.
 
 ## Reference repositories and docs
+
+- Pollinations API: https://enter.pollinations.ai/api/docs
+- Pollinations BYOP / device sign-in: https://github.com/pollinations/pollinations
 
 - PocketPal AI mobile architecture: https://github.com/a-ghorbani/pocketpal-ai
 - llama.rn: https://github.com/mybigday/llama.rn

@@ -1,0 +1,312 @@
+package com.pocketbuddy
+
+import android.content.ContentValues
+import android.content.Intent
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.media.MediaPlayer
+import android.media.MediaScannerConnection
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.Handler
+import android.os.Looper
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
+import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
+import java.io.File
+import java.io.FileInputStream
+import java.net.URL
+import java.util.UUID
+import javax.net.ssl.HttpsURLConnection
+
+/**
+ * Media helpers for generated images, videos and audio:
+ * HTTPS download to app storage, video thumbnails, in-app playback,
+ * sharing, opening in other apps and saving to the phone gallery.
+ */
+class PocketBuddyMediaModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+    override fun getName() = "PocketBuddyMedia"
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var player: MediaPlayer? = null
+    private var playerPromise: Promise? = null
+
+    private fun mediaDirectory(): File {
+        val directory = File(context.filesDir, "media")
+        if (!directory.exists()) directory.mkdirs()
+        return directory
+    }
+
+    private fun ownedMediaFile(path: String): File? {
+        val clean = path.removePrefix("file://")
+        val file = File(clean).canonicalFile
+        val root = mediaDirectory().canonicalFile
+        return if (file.path.startsWith(root.path + File.separator) && file.isFile) file else null
+    }
+
+    private fun extensionFor(mime: String, fallback: String): String {
+        val type = mime.lowercase()
+        return when {
+            type.contains("png") -> "png"
+            type.contains("webp") -> "webp"
+            type.contains("gif") -> "gif"
+            type.contains("svg") -> "svg"
+            type.contains("jpeg") || type.contains("jpg") -> "jpg"
+            type.contains("mp4") -> "mp4"
+            type.contains("webm") -> "webm"
+            type.contains("quicktime") -> "mov"
+            type.contains("mpeg") && type.startsWith("audio") -> "mp3"
+            type.contains("mp3") -> "mp3"
+            type.contains("wav") -> "wav"
+            type.contains("ogg") -> "ogg"
+            type.contains("aac") -> "aac"
+            type.contains("flac") -> "flac"
+            type.contains("opus") -> "opus"
+            else -> fallback
+        }
+    }
+
+    private fun writeThumbnail(video: File): String? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(video.absolutePath)
+            val frame = retriever.getFrameAtTime(400000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: retriever.frameAtTime ?: return null
+            val thumb = File(video.parentFile, video.nameWithoutExtension + "_thumb.jpg")
+            thumb.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+            frame.recycle()
+            thumb.absolutePath
+        } catch (_: Exception) {
+            null
+        } finally {
+            try { retriever.release() } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * GET or POST an HTTPS URL. Media responses are written to app storage and
+     * returned as {type:'file', path, mimeType, size, thumbnail?}. JSON or text
+     * responses (for example async job tickets) are returned as {type:'text', status, body}.
+     */
+    @ReactMethod
+    fun fetchToFile(url: String, method: String, headers: ReadableMap, body: String?, fallbackExtension: String, timeoutMs: Double, promise: Promise) {
+        val uri = Uri.parse(url)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
+            promise.reject("INVALID_MEDIA_URL", "Media requests must use HTTPS.")
+            return
+        }
+        Thread({
+            var connection: HttpsURLConnection? = null
+            var target: File? = null
+            try {
+                connection = URL(url).openConnection() as HttpsURLConnection
+                connection.instanceFollowRedirects = true
+                connection.requestMethod = if (method.equals("POST", true)) "POST" else "GET"
+                connection.connectTimeout = 30000
+                connection.readTimeout = timeoutMs.toInt().coerceIn(15000, 900000)
+                connection.setRequestProperty("User-Agent", "PocketBuddy/1.0 (Android)")
+                val iterator = headers.keySetIterator()
+                while (iterator.hasNextKey()) {
+                    val key = iterator.nextKey()
+                    val value = headers.getString(key) ?: continue
+                    connection.setRequestProperty(key, value)
+                }
+                if (connection.requestMethod == "POST" && body != null) {
+                    connection.doOutput = true
+                    connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+                val status = connection.responseCode
+                val mime = (connection.contentType ?: "").substringBefore(';').trim().lowercase()
+                val isMedia = mime.startsWith("image/") || mime.startsWith("video/") || mime.startsWith("audio/") || mime == "application/octet-stream"
+                if (status !in 200..299 || !isMedia) {
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    val text = try { stream?.bufferedReader()?.use { it.readText() } ?: "" } catch (_: Exception) { "" }
+                    val result = Arguments.createMap()
+                    result.putString("type", "text")
+                    result.putInt("status", status)
+                    result.putString("mimeType", mime)
+                    result.putString("body", text.take(20000))
+                    result.putString("retryAfter", connection.getHeaderField("Retry-After") ?: "")
+                    promise.resolve(result)
+                    return@Thread
+                }
+                val extension = extensionFor(mime, fallbackExtension.ifBlank { "bin" })
+                val output = File(mediaDirectory(), "pb_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().take(8) + "." + extension)
+                target = output
+                connection.inputStream.use { input -> output.outputStream().use { input.copyTo(it, 64 * 1024) } }
+                if (output.length() <= 0L) throw IllegalStateException("The media service returned an empty file.")
+                val result = Arguments.createMap()
+                result.putString("type", "file")
+                result.putInt("status", status)
+                result.putString("path", output.absolutePath)
+                result.putString("mimeType", if (mime == "application/octet-stream") "" else mime)
+                result.putDouble("size", output.length().toDouble())
+                if (mime.startsWith("video/")) writeThumbnail(output)?.let { result.putString("thumbnail", it) }
+                promise.resolve(result)
+            } catch (error: Exception) {
+                try { target?.delete() } catch (_: Exception) {}
+                val message = if (error is java.net.SocketTimeoutException) "The media service took too long to respond." else (error.message ?: error.toString())
+                promise.reject("MEDIA_FETCH_FAILED", message, error)
+            } finally {
+                connection?.disconnect()
+            }
+        }, "PocketBuddyMediaFetch").start()
+    }
+
+    @ReactMethod
+    fun deleteMedia(path: String, promise: Promise) {
+        val file = ownedMediaFile(path)
+        if (file == null) { promise.resolve(false); return }
+        File(file.parentFile, file.nameWithoutExtension + "_thumb.jpg").delete()
+        promise.resolve(file.delete())
+    }
+
+    private fun contentUri(file: File): Uri = FileProvider.getUriForFile(context, context.packageName + ".media", file)
+
+    @ReactMethod
+    fun openMedia(path: String, mimeType: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run { promise.reject("MEDIA_NOT_FOUND", "This media file is no longer on the phone."); return }
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).setDataAndType(contentUri(file), mimeType.ifBlank { "*/*" })
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(Intent.createChooser(intent, "Open with").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("OPEN_FAILED", "No app on this phone can open this file.", error)
+        }
+    }
+
+    @ReactMethod
+    fun playVideo(path: String, title: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run { promise.reject("MEDIA_NOT_FOUND", "This video is no longer on the phone."); return }
+        try {
+            val intent = Intent(context, VideoPlayerActivity::class.java)
+                .putExtra(VideoPlayerActivity.EXTRA_PATH, file.absolutePath)
+                .putExtra(VideoPlayerActivity.EXTRA_TITLE, title.take(200))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("PLAY_FAILED", error.message ?: "The video could not be played.", error)
+        }
+    }
+
+    @ReactMethod
+    fun shareMedia(path: String, mimeType: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run { promise.reject("MEDIA_NOT_FOUND", "This media file is no longer on the phone."); return }
+        try {
+            val intent = Intent(Intent.ACTION_SEND).setType(mimeType.ifBlank { "*/*" })
+                .putExtra(Intent.EXTRA_STREAM, contentUri(file))
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(Intent.createChooser(intent, "Share").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            promise.resolve(true)
+        } catch (error: Exception) {
+            promise.reject("SHARE_FAILED", error.message ?: "Sharing failed.", error)
+        }
+    }
+
+    /** Copies a generated file into the public gallery (Pictures, Movies or Music / Pocket Buddy). */
+    @ReactMethod
+    fun saveToGallery(path: String, mimeType: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run { promise.reject("MEDIA_NOT_FOUND", "This media file is no longer on the phone."); return }
+        Thread({
+            try {
+                val mime = mimeType.ifBlank { "application/octet-stream" }
+                val isVideo = mime.startsWith("video/")
+                val isAudio = mime.startsWith("audio/")
+                val name = "PocketBuddy_" + System.currentTimeMillis() + "." + file.extension
+                if (Build.VERSION.SDK_INT >= 29) {
+                    val collection = when {
+                        isVideo -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        isAudio -> MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                        else -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                    }
+                    val folder = (if (isVideo) Environment.DIRECTORY_MOVIES else if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_PICTURES) + "/Pocket Buddy"
+                    val values = ContentValues().apply {
+                        put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                        put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, folder)
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                    val resolver = context.contentResolver
+                    val item = resolver.insert(collection, values) ?: throw IllegalStateException("The gallery refused the file.")
+                    resolver.openOutputStream(item)?.use { out -> FileInputStream(file).use { it.copyTo(out) } }
+                        ?: throw IllegalStateException("Could not write to the gallery.")
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    resolver.update(item, values, null, null)
+                    promise.resolve(folder)
+                } else {
+                    @Suppress("DEPRECATION")
+                    val base = Environment.getExternalStoragePublicDirectory(if (isVideo) Environment.DIRECTORY_MOVIES else if (isAudio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_PICTURES)
+                    val folder = File(base, "Pocket Buddy")
+                    folder.mkdirs()
+                    val target = File(folder, name)
+                    file.copyTo(target, overwrite = true)
+                    MediaScannerConnection.scanFile(context, arrayOf(target.absolutePath), arrayOf(mime), null)
+                    promise.resolve(target.parent)
+                }
+            } catch (error: Exception) {
+                promise.reject("SAVE_FAILED", error.message ?: "Saving to the gallery failed.", error)
+            }
+        }, "PocketBuddySaveMedia").start()
+    }
+
+    private fun releasePlayer(result: String) {
+        try {
+            player?.setOnCompletionListener(null)
+            player?.setOnErrorListener(null)
+            player?.stop()
+        } catch (_: Exception) {}
+        try { player?.release() } catch (_: Exception) {}
+        player = null
+        playerPromise?.resolve(result)
+        playerPromise = null
+    }
+
+    /** Plays an audio file in the app. Resolves when playback completes or is stopped. */
+    @ReactMethod
+    fun playAudio(path: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run { promise.reject("MEDIA_NOT_FOUND", "This audio file is no longer on the phone."); return }
+        mainHandler.post {
+            releasePlayer("stopped")
+            try {
+                val next = MediaPlayer()
+                player = next
+                playerPromise = promise
+                next.setOnPreparedListener { it.start() }
+                next.setOnCompletionListener { if (player === it) releasePlayer("completed") }
+                next.setOnErrorListener { failed, _, _ ->
+                    if (player === failed) {
+                        player = null
+                        try { failed.release() } catch (_: Exception) {}
+                        playerPromise?.reject("PLAYBACK_FAILED", "This audio could not be played.")
+                        playerPromise = null
+                    }
+                    true
+                }
+                next.setDataSource(file.absolutePath)
+                next.prepareAsync()
+            } catch (error: Exception) {
+                player = null
+                playerPromise = null
+                promise.reject("PLAYBACK_FAILED", error.message ?: "This audio could not be played.", error)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun stopAudio(promise: Promise) {
+        mainHandler.post { releasePlayer("stopped"); promise.resolve(true) }
+    }
+
+    override fun invalidate() {
+        mainHandler.post { releasePlayer("stopped") }
+        super.invalidate()
+    }
+}
