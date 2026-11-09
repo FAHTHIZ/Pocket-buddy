@@ -4,7 +4,7 @@ Pocket Buddy ships one ARM64 APK for every phone. On each load it looks at the p
 
 ## What was studied
 
-- **[BigMoeOnEdge](https://github.com/Helldez/BigMoeOnEdge)** (Apache-2.0) is a llama.cpp fork for Android. It keeps the dense part of a Mixture-of-Experts model resident and reads only the routed experts from flash. It has a bounded LRU expert cache, a routing history used to prefetch experts, parallel asynchronous reads (`--io-threads`) overlapped with compute (`--overlap`), and a planner (`--auto`) that measures threads and read lanes on the device. It exposes all of this through an OpenAI-compatible server. This is the approach Pocket Buddy integrates.
+- **[BigMoeOnEdge](https://github.com/Helldez/BigMoeOnEdge)** (Apache-2.0) is a llama.cpp fork for Android. It keeps the dense part of a Mixture-of-Experts model resident and reads only the routed experts from flash. It has a bounded LRU expert cache, a routing history used to prefetch experts, parallel asynchronous reads (`--io-threads`) overlapped with compute (`--overlap`), and a planner (`--auto` in its CLI, run on every load by its server) that measures threads and read lanes on the device. It exposes all of this through an OpenAI-compatible server. This is the approach Pocket Buddy integrates.
 - **[colibri](https://github.com/JustVugg/colibri)** is a pure-C engine built on the same idea: dense weights resident, experts streamed from disk per token. It targets very large models (hundreds of billions of parameters) on desktop machines with 8 GB+ RAM and uses its own model packaging. Pocket Buddy adopts its principles rather than its code. Experts are streamed only for real MoE models. Precision and router semantics never change silently. Every optimisation must be backed by a reproducible measurement. Its runtime was not embedded because Pocket Buddy's models are plain GGUF files and already run through llama.cpp.
 
 ## Architecture first
@@ -15,7 +15,7 @@ Before anything else Pocket Buddy reads the GGUF header natively (`GgufInspector
 |---|---|---|
 | Qwen3.8 2B Uncensored (default, `qwen35`) | dense, no expert tensors | llama.rn (unchanged backend) |
 | Qwen3.8 4B, Qwen3 0.6B, any dense GGUF | dense | llama.rn |
-| LFM2.5 8B-A1B (`lfm2moe`, 32 experts, 4 per token) on a 6 GB phone | MoE, larger than the RAM budget | MoE expert streaming |
+| LFM2 8B-A1B Abliterated (`lfm2moe`, 32 experts, 4 per token) on a 6 GB phone | MoE, larger than the RAM budget | MoE expert streaming |
 | The same MoE model on a 12 GB phone | MoE, fits in the RAM budget | llama.rn, fully in memory |
 
 Expert streaming is never applied to a dense model. A MoE model that fits in the RAM budget also runs normally, because streaming only helps when the weights do not fit.
@@ -70,10 +70,10 @@ llama.cpp's Android GPU path (OpenCL) only supports Qualcomm Adreno. On Mali GPU
 
 - **Engine.** The BigMoeOnEdge v0.40.2 server and its ggml libraries are extracted at build time from the pinned upstream release, verified by SHA-256 and packaged as `lib*.so` in the APK (about 30 MB, ARM64 only). `PocketBuddyMoE` starts it as a child process bound to `127.0.0.1` with a random port and an API key. It is tied to the app's process ID, so it exits with the app. Cleartext traffic is allowed only for loopback.
 - **Bounded cache.** The expert cache equals the budget minus dense weights, KV, compute buffers and a 200 MB margin. On a 6 GB phone in Balanced this is about 1.6 GB.
-- **Selection and prefetch.** The engine records which experts the router picks (`--routing-dir`, kept in app storage) and uses that history to keep and prefetch likely experts.
+- **Selection and prefetch.** The engine records which experts the router picks (its routing record, kept in the engine's data folder inside app storage, so later launches size the cache from the real hit rate) and uses that history to keep and prefetch likely experts.
 - **Parallel reads.** Read lanes come from the measured storage test (Settings → Measure storage speed: sequential plus random 512 KB reads at 1, 2 and 4 lanes). Without a measurement eMMC gets 2 lanes, UFS 4 and Maximum on UFS 6. Reads overlap with compute.
-- **Automatic profile.** When the cache is at least 1.5 GB, the engine's own `--auto` planner measures threads and lanes inside Pocket Buddy's limits (cache floor and ceiling). Otherwise an explicit configuration is used.
-- **Fallbacks.** If the auto planner fails, Pocket Buddy uses its own streaming settings. If the engine itself fails, it uses llama.rn with memory mapping, then the previous safe defaults.
+- **Automatic profile.** The bundled server plans every load itself. In Automatic, when the cache can be at least 1.5 GB, Pocket Buddy passes only its limits (`--cache-mb auto` between a floor and a ceiling) and lets the engine measure threads, read lanes and overlap. In the other profiles it pins threads, lanes, cache size and overlap explicitly, and the engine never overrules pinned values.
+- **Fallbacks.** If the automatic launch fails, Pocket Buddy uses its own streaming settings. If the engine itself fails, it uses llama.rn with memory mapping, then the previous safe defaults.
 
 ## What this means on a 6 GB eMMC phone (Infinix Hot 10S, Helio G85)
 

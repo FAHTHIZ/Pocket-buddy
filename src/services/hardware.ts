@@ -284,7 +284,9 @@ export function planInference(input: PlanInput): InferencePlan {
     if (profile === 'battery') ioLanes = Math.min(ioLanes, 2);
     if (profile === 'max' && !emmc && !lanesMeasured) ioLanes = 6;
     const threadsBatch = profile === 'battery' ? nThreads : topo.total;
-    const common = ['--moe-stream', '-c', String(nCtx), '--routing-dir', '{routingDir}', '--temp', '0.7', '--top-p', '0.9'];
+    // bmoe-server keeps each model's routing record (expert hit history used for prefetch and cache sizing)
+    // under its data folder by itself, and plans every load; launch flags are pinned and never overruled.
+    const common = ['--moe-stream', '-c', String(nCtx), '--temp', '0.7', '--top-p', '0.9'];
     if (kvType === 'q8_0') common.push('-ctk', 'q8_0', '-ctv', 'q8_0');
     const explicit = [...common, '-t', String(nThreads), '--threads-batch', String(threadsBatch), '--io-threads', String(ioLanes)];
     if (cacheMb >= tokenSetMb * 2) { explicit.push('--cache-mb', String(cacheMb)); if (cacheMb < 1500) explicit.push('--force-cache'); explicit.push('--overlap'); }
@@ -293,7 +295,7 @@ export function planInference(input: PlanInput): InferencePlan {
     // inside Pocket Buddy's RAM limits: the floor is what Android keeps, the ceiling our budget.
     const useAutoPlanner = input.requestedProfile === 'auto' && profile !== 'battery' && cacheMb >= 1500;
     const floorMb = Math.max(512, Math.round((memory?.availableMb || 2048) - cacheMb));
-    const auto = [...common, '--auto', '--cache-mb', 'auto', '--cache-floor-mb', String(floorMb), '--cache-ceil-mb', String(Math.max(cacheMb, 256))];
+    const auto = [...common, '--cache-mb', 'auto', '--cache-floor-mb', String(floorMb), '--cache-ceil-mb', String(Math.max(cacheMb, 256))];
     const args = useAutoPlanner ? auto : explicit;
     plan.moe = {cacheMb, ioLanes, threadsBatch, useAutoPlanner, args, fallbackArgs: explicit};
     reasons.push(`Expert cache ${cacheMb} MB (one token needs ~${tokenSetMb} MB of experts), ${ioLanes} parallel ${emmc ? 'eMMC' : 'flash'} read lanes${lanesMeasured ? ' (measured)' : ''}, async reads overlapped with compute${useAutoPlanner ? '; the engine re-measures threads and lanes on its first answer' : ''}.`);
@@ -349,7 +351,7 @@ export function describeDevice(probe: HardwareProbe | null): string {
 /** Model suggestions from measured RAM, not from phone names. */
 export function recommendModels(totalMb: number): {dense: string; moe: string | null; note: string} {
   if (totalMb < 4500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: null, note: 'Under 4.5 GB RAM: stay with 2B dense models.'};
-  if (totalMb < 7500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: 'LFM2.5 8B-A1B abliterated IQ4_XS (4.6 GB, expert streaming)', note: '6 GB class: the 2B dense model is fastest for chat; the 8B MoE streams experts from storage for higher quality.'};
-  if (totalMb < 11500) return {dense: 'Qwen3.8 4B class Q4_K_M', moe: 'LFM2.5 8B-A1B abliterated Q4_K_S (fits fully in RAM)', note: '8 GB class: 8B-A1B MoE fits in RAM without streaming.'};
+  if (totalMb < 7500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: 'LFM2 8B-A1B abliterated IQ4_XS (4.5 GB, expert streaming)', note: '6 GB class: the 2B dense model is fastest for chat; the 8B MoE streams experts from storage for higher quality.'};
+  if (totalMb < 11500) return {dense: 'Qwen3.8 4B class Q4_K_M', moe: 'LFM2 8B-A1B abliterated IQ4_XS (fits fully in RAM)', note: '8 GB class: 8B-A1B MoE fits in RAM without streaming.'};
   return {dense: 'Qwen3.8 8B class Q4_K_M', moe: 'Qwen3.6 35B-A3B abliterated (expert streaming)', note: '12 GB+: large MoE models with expert streaming.'};
 }

@@ -7,7 +7,7 @@ set -uo pipefail
 WORK=${WORK:-$HOME/pb-bench}; OUT=${OUT:-$PWD/bench-results}; mkdir -p "$WORK" "$OUT"
 LLAMA_TAG=${LLAMA_TAG:-b12211}; BMOE_VER=0.40.2
 QWEN_URL=https://huggingface.co/atakhadivi/Qwen3.8-2B-Uncensored-GGUF/resolve/main/Qwen3.8-2B-Uncensored-Q4_K_M.gguf
-LFM_URL=https://huggingface.co/mradermacher/Huihui-LFM2.5-8B-A1B-abliterated-i1-GGUF/resolve/main/Huihui-LFM2.5-8B-A1B-abliterated.i1-IQ4_XS.gguf
+LFM_URL=https://huggingface.co/mradermacher/Huihui-LFM2-8B-A1B-abliterated-i1-GGUF/resolve/main/Huihui-LFM2-8B-A1B-abliterated.i1-IQ4_XS.gguf
 LFM_SHA=4ab7d5d7c3b5d89ded2f577dbfb6fe29475c34c6abc17b5f11d0920ae916f30f
 MEM_BUDGET=${MEM_BUDGET:-2468M}     # planner's Balanced budget on a 6 GB phone (5650 MB visible)
 EMMC_BW=${EMMC_BW:-250M}            # eMMC 5.1 sequential read class
@@ -68,24 +68,26 @@ run_dense(){ # label, args...
 }
 : > "$OUT/dense.jsonl"
 run_dense existing -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
+# Same old settings but the tuned thread count, to separate the thread effect from the rest.
+run_dense existing-tuned-threads -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BEST_T" --no-warmup
 run_dense adaptive -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$BEST_T" -tb "$CORES"
 
-# ---------------- MoE: LFM2.5 8B-A1B under a 6 GB-phone budget ----------------
+# ---------------- MoE: LFM2 8B-A1B under a 6 GB-phone budget ----------------
 DEV=$(lsblk -no pkname "$(findmnt -no SOURCE --target "$WORK")" 2>/dev/null | head -1); DEV=/dev/${DEV:-sda}
 log "MoE runs: MemoryMax=$MEM_BUDGET IOReadBandwidthMax=$DEV $EMMC_BW"
 IO_PROP=(-p "IOReadBandwidthMax=$DEV $EMMC_BW")
 if ! sudo systemd-run --quiet --scope "${IO_PROP[@]}" true 2>/dev/null; then echo "io throttling unavailable; RAM limit only" | tee "$OUT/io-throttle-unavailable.txt"; IO_PROP=(); fi
-SCOPE=(sudo systemd-run --quiet --scope -p MemoryMax=$MEM_BUDGET -p MemorySwapMax=0 "${IO_PROP[@]}" --uid="$(id -u)" --gid="$(id -g)" --setenv=LD_LIBRARY_PATH="$BDIR")
+SCOPE=(sudo systemd-run --quiet --scope -p MemoryMax=$MEM_BUDGET -p MemorySwapMax=0 "${IO_PROP[@]}" --uid="$(id -u)" --gid="$(id -g)")
 echo key-for-bench > "$WORK/key"; echo '{"version":1,"about":"bench","models":[]}' > "$WORK/cat.json"
 run_moe(){ # label, kind(llama|bmoe), args...
   local label=$1 kind=$2; shift 2
-  drop_caches; rm -rf "$WORK/bmdata"; mkdir -p "$WORK/bmdata" "$WORK/routing"
+  drop_caches; mkdir -p "$WORK/bmdata"
   local t0=$(date +%s.%N) url key=""
   if [ "$kind" = llama ]; then
-    "${SCOPE[@]}" "$LS" -m lfm.gguf --port 8092 --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$(dirname "$LS")" "$LS" -m lfm.gguf --port 8092 --host 127.0.0.1 "$@" > "$OUT/moe-$label.log" 2>&1 &
     url=http://127.0.0.1:8092; wait_http $url/health || true
   else
-    "${SCOPE[@]}" "$BS" --port 8092 --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
+    "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port 8092 --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
     url=http://127.0.0.1:8092; key=key-for-bench
     for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; sleep 1; done
   fi
@@ -99,6 +101,9 @@ run_moe(){ # label, kind(llama|bmoe), args...
 }
 : > "$OUT/moe.jsonl"
 run_moe existing-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
-run_moe stream-explicit bmoe --moe-stream -c 4096 -t "$CORES" --threads-batch "$CORES" --io-threads 2 --cache-mb 1636 --overlap --routing-dir "$WORK/routing"
-run_moe stream-auto bmoe --moe-stream --auto --cache-mb auto --cache-floor-mb 512 --cache-ceil-mb 1636 -c 4096 --routing-dir "$WORK/routing"
+# Exactly the argument sets Pocket Buddy's planner emits for a 6 GB eMMC phone (Balanced, and Automatic).
+# The data folder is kept between the two runs, as on the phone, so the second launch can use the routing record.
+rm -rf "$WORK/bmdata"
+run_moe stream-explicit bmoe --moe-stream -c 4096 --temp 0.7 --top-p 0.9 -t "$CORES" --threads-batch "$CORES" --io-threads 2 --cache-mb 1636 --overlap
+run_moe stream-auto bmoe --moe-stream -c 4096 --temp 0.7 --top-p 0.9 --cache-mb auto --cache-floor-mb 512 --cache-ceil-mb 1636
 log "done"; cat "$OUT"/dense.jsonl "$OUT"/moe.jsonl
