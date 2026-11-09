@@ -5,6 +5,7 @@ Pocket Buddy's own original source code and documentation are licensed under Apa
 Third-party components are not relicensed by this notice. Their notices and original licenses remain applicable. In particular:
 - React Native and llama.rn are MIT-licensed.
 - llama.cpp is MIT-licensed.
+- The bundled MoE streaming engine (BigMoeOnEdge by Helldez, a llama.cpp fork) is Apache-2.0; its license and third-party notices are in third_party/bigmoeonedge/ and packaged in the app.
 - react-native-keychain is MIT-licensed.
 - SQLite is public domain; the React Native binding has its own license.
 - ComfyUI is GPL-3.0 and is expected to run as a separate server, not bundled into the mobile application.

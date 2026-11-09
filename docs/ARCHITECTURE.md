@@ -100,7 +100,7 @@ Database migrations and encrypted database options should be considered before a
 
 ## Android device intelligence
 
-The native module reports device model, SoC, Android API level, total/available RAM, app memory class, available storage and thermal status. These are inputs for model-fit warnings. Reading thermal state alone does not automatically throttle the runtime; workload policy still needs device testing.
+The native module reports device model, SoC, Android API level, total/available RAM, app memory class, available storage and thermal status, which feed the model-fit warnings. `PocketBuddyHardware` adds CPU topology and ARM features, storage type and speed, GPU, battery and power-save state, and thermal and memory-pressure events. These drive the adaptive planner. Thermal status lowers the thread count, and memory pressure triggers a re-plan. See [ADAPTIVE_ENGINE.md](ADAPTIVE_ENGINE.md).
 
 Large transfers use Android DownloadManager so they can survive Activity recreation. Process-death recovery and model-file integrity hashing should be verified on representative Android devices.
 
@@ -121,5 +121,8 @@ Large transfers use Android DownloadManager so they can survive Activity recreat
 - Pollinations sign-in uses the OAuth-style device flow (`/api/device/code` → browser approval → `/api/device/token`). Keys live in the Android Keystore.
 
 ## Local inference details
+
+Two local engines sit behind the same `complete()` call: llama.rn for dense models and for MoE models that fit in RAM, and the bundled BigMoeOnEdge server (loopback only) for MoE models that need expert streaming. `planInference` chooses between them from the GGUF header and the hardware probe. Fallbacks run MoE auto → MoE explicit → llama.rn adaptive → the previous defaults.
+
 
 Local completions use the GGUF chat template through llama.rn's Jinja path (`jinja: true`) with `enable_thinking: false` and `reasoning_format: 'auto'`, so Qwen3.x thinking blocks are kept out of the visible reply; any stray `<think>` text is stripped defensively. Streaming uses the parsed `content` field so tool-call markup does not flash in the chat.

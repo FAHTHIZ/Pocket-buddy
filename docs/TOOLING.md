@@ -7,6 +7,9 @@ This is the selected stack and extension inventory. Versions and licenses must b
 | Mobile app | React Native | MIT; Android-first UI |
 | Native language runtime | llama.cpp | MIT; GGUF model inference |
 | React Native bridge | llama.rn | MIT; Android/iOS bridge to llama.cpp |
+| MoE expert-streaming engine | BigMoeOnEdge v0.40.2 (Helldez) | Apache-2.0; prebuilt arm64 server and ggml libraries extracted from the pinned upstream APK (SHA-256 verified) at build time; license in `third_party/bigmoeonedge/` and app assets |
+| Studied, not bundled | colibri (JustVugg) | Design reference for expert streaming; no code included |
+| Heavy MoE pick | LFM2.5 8B-A1B Abliterated GGUF (mradermacher i1 quants of huihui-ai) | Model card license (LFM Open License); downloaded by the user, not bundled |
 | API provider | OpenAI-compatible Chat Completions | Protocol; use provider's actual API terms |
 | Database | react-native-nitro-sqlite / SQLite | MIT; async SQLite queries and transactions |
 | Native modules bridge | react-native-nitro-modules | MIT; native JSI/Nitro module bridge |

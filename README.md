@@ -11,11 +11,13 @@ Pocket Buddy is an Android app in the spirit of PocketPal: install it, tap one b
 ## What you get
 
 - **Default model: Qwen3.8 2B Uncensored** (GGUF, Q4_K_M, ~1.27 GB). One tap downloads it, loads it and starts the chat. After that it runs offline.
-- **Pick any model you like.** Curated picks (Qwen3.8 4B Heretic for 8 GB+ phones, Qwen3 0.6B Lite for older phones), any GGUF from Hugging Face via search, free cloud chat with no download, 200+ cloud models through Pollinations, or your own OpenAI-compatible provider.
+- **Pick any model you like.** Curated picks (Qwen3.8 4B Heretic for 8 GB+ phones, the heavy LFM2.5 8B-A1B Abliterated Mixture-of-Experts model, Qwen3 0.6B Lite for older phones), any GGUF from Hugging Face via search, free cloud chat with no download, 200+ cloud models through Pollinations, or your own OpenAI-compatible provider.
 - **Many images at once.** Up to 20 images per request, generated in parallel and shown as a live-filling grid. Tap any image for a full-screen swipeable viewer with Save / Share / Open.
 - **Video.** Short clips (Wan 2.2, Veo 3.1, Seedance and others from the live catalog) with an in-app player.
 - **Audio.** Music and songs, text-to-speech with 11 voices, and sound effects, with an in-chat player.
 - **Media library.** Everything you create is kept on the phone, filterable by type, with save, share and delete.
+- **Adapts to your phone automatically.** The same APK detects the CPU cores, ARM instructions, RAM, storage type, GPU, battery and temperature, reads the model's architecture, and picks the engine, threads, context and memory budget. Profiles: Automatic (default), Battery Saver, Balanced, Maximum Performance. It always leaves RAM for Android and your other apps.
+- **Heavy MoE models on 6 GB phones.** Mixture-of-Experts models that do not fit in RAM are run with expert streaming (BigMoeOnEdge engine, bundled): only the experts each token needs are read from storage into a bounded RAM cache, with parallel reads overlapped with compute. Dense models such as the default Qwen3.8 2B keep the normal fast engine.
 - Streaming Markdown chat, chat history, edit and regenerate, read aloud, voice dictation, tools (calculator, time, web search via SearXNG, webpage reader, GitHub, MCP connectors).
 
 ## Using it
@@ -49,6 +51,13 @@ Every model in the pickers is labelled Free or Paid. Paid models draw pollen fro
 - The chat model runs on your phone, so nothing filters it. Qwen3.8 2B Uncensored is a community fine-tune ([atakhadivi/Qwen3.8-2B-Uncensored-GGUF](https://huggingface.co/atakhadivi/Qwen3.8-2B-Uncensored-GGUF)) built on the Qwen3.5 2B architecture. Qwen3.8 4B Heretic ([mradermacher/Qwen3.8-4B-Heretic-i1-GGUF](https://huggingface.co/mradermacher/Qwen3.8-4B-Heretic-i1-GGUF)) is a larger abliterated variant. The official Qwen3.8 releases are 27B+ and too large for phones.
 - Image, video and audio models run on Pollinations and the upstream providers. Pocket Buddy sends `safe=false` where the API supports it, but some providers (for example Google Veo and ElevenLabs) apply their own content policies, which the app cannot override. Open models such as Z-Image, FLUX and Wan are generally the least restrictive.
 - Generating video or music *on the phone itself* is not practical with current phone hardware, so those always use the cloud engine.
+
+## Speed, heavy models and your phone
+
+- **Everyday chat:** keep the default Qwen3.8 2B. It is a dense model, so it runs fully in memory on the normal llama.cpp engine. On a 6 GB phone it is the fastest option.
+- **Heavier, smarter answers:** Models → LFM2.5 8B-A1B Abliterated (MoE). On a 6 GB phone it does not fit in RAM, so Pocket Buddy streams its experts from storage. It works, but on eMMC storage (for example an Infinix Hot 10S / Helio G85) replies are slow and the first load takes minutes, so choose it for quality, not speed. On 12 GB+ phones it loads fully into memory and is much faster, with no settings to change.
+- **Settings → On-device → Performance** shows what was detected and why each setting was chosen. It has the profile picker, **Benchmark this phone** (previous settings against the adaptive engine, on your own phone) and **Measure storage speed**.
+- Measured numbers and how they were obtained: [docs/BENCHMARKS.md](docs/BENCHMARKS.md). How the engine works: [docs/ADAPTIVE_ENGINE.md](docs/ADAPTIVE_ENGINE.md).
 
 ## For heavy users: your own ComfyUI
 
@@ -112,7 +121,8 @@ Keep the keystore and passwords private, backed up securely, and out of Git. Wit
 
 ## Known limitations
 
-- On-device speed depends on the phone. On a mid-range phone the 2B default typically streams at a comfortable reading speed; the 4B model needs a flagship.
+- On-device speed depends on the phone. Run Settings → Performance → Benchmark this phone to see real numbers for your device. MoE expert streaming is limited by storage speed; on eMMC phones it is slow.
+- The MoE streaming engine is ARM64 + Android 10+ only. Elsewhere MoE models fall back to the normal engine.
 - Without a Pollinations account, image batches are slow (about one image every 45 seconds, because the free endpoint is rate-limited per network).
 - Video and music cost pollen. If your balance or the key's spending cap runs out, the app shows Pollinations' error message; top up or raise the cap at enter.pollinations.ai.
 - Tool calling quality depends on the model. Direct requests ("create …", "make a video …") and the ＋ menu always work regardless of the model.
@@ -128,6 +138,8 @@ Keep the keystore and passwords private, backed up securely, and out of Git. Wit
 ## Documentation
 
 - Architecture: docs/ARCHITECTURE.md
+- Adaptive hardware engine and MoE streaming: docs/ADAPTIVE_ENGINE.md
+- Benchmarks: docs/BENCHMARKS.md
 - Tooling and license inventory: docs/TOOLING.md
 - Security policy: SECURITY.md
 - Contributing: CONTRIBUTING.md
