@@ -8,7 +8,7 @@ WORK=${WORK:-$HOME/pb-bench}; OUT=${OUT:-$PWD/bench-results}; mkdir -p "$WORK" "
 LLAMA_TAG=${LLAMA_TAG:-b12211}; BMOE_VER=0.40.2
 QWEN_URL=https://huggingface.co/atakhadivi/Qwen3.8-2B-Uncensored-GGUF/resolve/main/Qwen3.8-2B-Uncensored-Q4_K_M.gguf
 LFM_URL=https://huggingface.co/mradermacher/Huihui-LFM2-8B-A1B-abliterated-i1-GGUF/resolve/main/Huihui-LFM2-8B-A1B-abliterated.i1-IQ4_XS.gguf
-LFM_SHA=4ab7d5d7c3b5d89ded2f577dbfb6fe29475c34c6abc17b5f11d0920ae916f30f
+LFM_SHA=dbfa231b92c2ede76d7ec00b9c2feb4a21260a64dd6fcc4e63318853b197a087
 MEM_BUDGET=${MEM_BUDGET:-2468M}     # planner's Balanced budget on a 6 GB phone (5650 MB visible)
 EMMC_BW=${EMMC_BW:-250M}            # eMMC 5.1 sequential read class
 HERE=$(cd "$(dirname "$0")" && pwd)
