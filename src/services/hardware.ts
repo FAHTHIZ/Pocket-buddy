@@ -261,7 +261,8 @@ export function planInference(input: PlanInput): InferencePlan {
   else if (input.probe?.gpu.adreno) reasons.push('Adreno GPU found; it is used only if the benchmark shows it is faster.');
   else reasons.push(`GPU (${input.probe?.gpu.renderer || 'unknown'}) has no supported llama.cpp backend here, so the CPU's ${[input.probe?.cpu.dotprod && 'dotprod', input.probe?.cpu.i8mm && 'i8mm', input.probe?.cpu.sve && 'SVE', input.probe?.cpu.fp16 && 'fp16'].filter(Boolean).join(', ') || 'NEON'} kernels are used.`);
 
-  const fitsInMemory = engine === 'moe-stream' ? true : weightsMb + kvMb + computeMb <= budgetMb;
+  const holdBudget = profile === 'battery' && memory ? Math.max(budgetMb, memoryBudgetMb(memory, 'balanced').budgetMb) : budgetMb;
+  const fitsInMemory = engine === 'moe-stream' ? true : weightsMb + kvMb + computeMb <= holdBudget;
   if (!fitsInMemory) reasons.push(`Warning: this model (${weightsMb} MB) plus its buffers exceeds the ${budgetMb} MB budget; Android may close other apps or the model may be slow.`);
 
   const plan: InferencePlan = {
