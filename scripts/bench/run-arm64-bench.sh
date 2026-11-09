@@ -24,8 +24,16 @@ if [ ! -x llama.cpp/build/bin/llama-server ]; then
 fi
 LS=$WORK/llama.cpp/build/bin/llama-server; LB=$WORK/llama.cpp/build/bin/llama-bench
 log "fetching bmoe $BMOE_VER linux-aarch64"
-if [ ! -d bmoe ]; then mkdir bmoe && curl -fsSL "https://github.com/Helldez/BigMoeOnEdge/releases/download/v$BMOE_VER/bmoe-cli-v$BMOE_VER-linux-aarch64.tar.gz" | tar xz -C bmoe --strip-components=1; fi
-BS=$(find "$WORK/bmoe" -name bmoe-server -type f | head -1); BDIR=$(dirname "$BS")
+BTGZ=bmoe-cli-v$BMOE_VER-linux-aarch64.tar.gz
+for i in $(seq 1 8); do
+  [ -s "$BTGZ" ] && gzip -t "$BTGZ" 2>/dev/null && break
+  rm -f "$BTGZ"; curl -fsSL --retry 3 -o "$BTGZ" "https://github.com/Helldez/BigMoeOnEdge/releases/download/v$BMOE_VER/$BTGZ" \
+    || gh release download "v$BMOE_VER" -R Helldez/BigMoeOnEdge -p "$BTGZ" --clobber 2>/dev/null || sleep $((i*15))
+done
+rm -rf bmoe; mkdir bmoe && tar xzf "$BTGZ" -C bmoe
+BS=$(find "$WORK/bmoe" -name bmoe-server -type f | head -1)
+[ -n "$BS" ] || { echo "bmoe-server missing from $BTGZ" | tee "$OUT/bmoe-missing.txt"; exit 1; }
+chmod +x "$BS"; BDIR=$(dirname "$BS")
 log "fetching models"
 [ -f qwen.gguf ] || curl -fsSL -o qwen.gguf "$QWEN_URL"
 [ -f lfm.gguf ] || curl -fsSL -o lfm.gguf "$LFM_URL"
@@ -41,6 +49,7 @@ wait_http(){ for _ in $(seq 1 900); do curl -fs -H "Authorization: Bearer ${2:-x
 hwm(){ awk '/VmHWM/{print $2/1024}' "/proc/$1/status" 2>/dev/null || echo 0; }
 
 # ---------------- dense: Qwen3.8 2B ----------------
+if [ "${SKIP_DENSE:-0}" != 1 ]; then
 log "llama-bench thread sweep (dense)"
 "$LB" -m qwen.gguf -p 128 -n 64 -t $(seq -s, 1 "$CORES") -fa 0,1 -r 3 -o json > "$OUT/dense-llama-bench.json" 2> "$OUT/dense-llama-bench.err" || true
 BEST_T=$(python3 - "$OUT/dense-llama-bench.json" <<'PY'
@@ -71,6 +80,7 @@ run_dense existing -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
 # Same old settings but the tuned thread count, to separate the thread effect from the rest.
 run_dense existing-tuned-threads -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BEST_T" --no-warmup
 run_dense adaptive -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$BEST_T" -tb "$CORES"
+fi
 
 # ---------------- MoE: LFM2 8B-A1B under a 6 GB-phone budget ----------------
 DEV=$(lsblk -no pkname "$(findmnt -no SOURCE --target "$WORK")" 2>/dev/null | head -1); DEV=/dev/${DEV:-sda}
