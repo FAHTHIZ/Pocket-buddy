@@ -129,6 +129,15 @@ jobs:
           fi
           exit "$code"
 
+      - name: Fetch pinned MoE streaming engine (BigMoeOnEdge v0.40.2)
+        if: success()
+        shell: bash
+        run: |
+          mkdir -p android/.gradle/moe-engine
+          target=android/.gradle/moe-engine/bigmoeonedge-0.40.2.apk
+          curl -fsSL --retry 4 -o "$target" https://github.com/Helldez/BigMoeOnEdge/releases/download/v0.40.2/app-dev-release.apk
+          echo "b79fd8a83155b838819e0b1b368b1545469a9f51cac4e995be84e3eb5ae1a419  $target" | sha256sum -c -
+
       - name: Build standalone ARM64 release APK
         if: success()
         id: android_release
@@ -146,6 +155,11 @@ jobs:
           echo "$code" > android-release.exit
           if [ "$code" -eq 0 ]; then
             cp android/app/build/outputs/apk/release/app-release.apk PocketBuddy.apk
+            if unzip -l PocketBuddy.apk | grep -q "lib/arm64-v8a/libbmoe-server.so"; then
+              echo "MoE streaming engine bundled:"; unzip -l PocketBuddy.apk | grep -E "libbmoe|libggml|libllama|librnllama" | awk '{print $1, $4}'
+            else
+              echo "::error title=MoE engine::libbmoe-server.so is missing from the ARM64 APK."; code=1
+            fi
           else
             echo "::error title=Android release build::Standalone ARM64 release build failed."
           fi

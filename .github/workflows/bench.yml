@@ -1,0 +1,45 @@
+name: ARM64 inference benchmark
+
+on:
+  workflow_dispatch:
+    inputs:
+      mem_budget:
+        description: RAM limit for the MoE runs (planner budget for a 6 GB phone)
+        default: 2468M
+      emmc_bw:
+        description: Read bandwidth limit emulating eMMC 5.1
+        default: 250M
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake build-essential >/dev/null
+      - name: Run benchmark
+        env:
+          MEM_BUDGET: ${{ inputs.mem_budget }}
+          EMMC_BW: ${{ inputs.emmc_bw }}
+          OUT: ${{ github.workspace }}/bench-results
+        run: bash scripts/bench/run-arm64-bench.sh 2>&1 | tee bench-console.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## ARM64 benchmark (GitHub ubuntu-24.04-arm runner, not a phone)'
+            echo '```'; cat bench-results/nproc.txt bench-results/architecture.txt 2>/dev/null; echo '```'
+            echo '### Dense'; echo '```'; cat bench-results/dense.jsonl 2>/dev/null; echo '```'
+            echo '### MoE'; echo '```'; cat bench-results/moe.jsonl 2>/dev/null; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: |
+            bench-results
+            bench-console.log
