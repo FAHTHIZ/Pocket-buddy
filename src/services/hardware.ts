@@ -188,6 +188,11 @@ export type PlanInput = {
   gpuDevices?: string[];
 };
 
+function measuredMoe(m: NonNullable<ThreadTuning['moeMeasured']>): string {
+  const reply = (ttft: number, tps: number) => tps > 0 ? ((ttft + 64000 / tps) / 1000).toFixed(1) + ' s' : 'failed';
+  return `64-token reply: streaming ${reply(m.streamTtftMs, m.streamDecodeTps)} at ${m.streamDecodeTps.toFixed(2)} tok/s, memory-mapped ${reply(m.mmapTtftMs, m.mmapDecodeTps)} at ${m.mmapDecodeTps.toFixed(2)} tok/s`;
+}
+
 export function planInference(input: PlanInput): InferencePlan {
   const reasons: string[] = [];
   const memory = input.memory || input.probe?.memory || null;
@@ -215,12 +220,11 @@ export function planInference(input: PlanInput): InferencePlan {
     else if (!input.moeEngineAvailable) reasons.push('The MoE streaming engine is not available on this phone (needs ARM64 and Android 10+).');
     else if (fits) reasons.push('The whole model fits in the RAM budget, so it runs fully in memory without streaming.');
     else if (input.tuning?.moeEngine === 'llama.rn' && input.tuning.moeMeasured) {
-      const m = input.tuning.moeMeasured;
-      reasons.push(`The model is larger than the RAM budget. On this phone the benchmark measured memory-mapped loading faster than expert streaming (${m.mmapDecodeTps.toFixed(2)} vs ${m.streamDecodeTps.toFixed(2)} tok/s), so the standard engine is used. Re-run the benchmark to re-check.`);
+      reasons.push(`The model is larger than the RAM budget, but on this phone the benchmark measured memory-mapped loading faster than expert streaming (${measuredMoe(input.tuning.moeMeasured)}), so the standard engine is used. Re-run the benchmark to re-check.`);
     } else {
       engine = 'moe-stream';
       const m = input.tuning?.moeEngine === 'moe-stream' ? input.tuning.moeMeasured : undefined;
-      reasons.push('The model is larger than the RAM budget, so only the routed experts are streamed from storage' + (m ? ` (measured faster here: ${m.streamDecodeTps.toFixed(2)} vs ${m.mmapDecodeTps.toFixed(2)} tok/s with mmap).` : '. Run the benchmark to check whether memory-mapped loading is faster on this phone.'));
+      reasons.push('The model is larger than the RAM budget, so only the routed experts are streamed from storage' + (m ? ` (measured faster on this phone: ${measuredMoe(m)}).` : '. Run the benchmark to check whether memory-mapped loading is faster on this phone.'));
     }
   }
 
@@ -303,7 +307,10 @@ export function planInference(input: PlanInput): InferencePlan {
     else { explicit.push('--cache-mb', '0'); cacheMb = 0; }
     // Automatic hands thread count, read lanes and overlap to the engine's measured planner, but
     // inside Pocket Buddy's RAM limits: the floor is what Android keeps, the ceiling our budget.
-    const useAutoPlanner = input.requestedProfile === 'auto' && profile !== 'battery' && cacheMb >= 1500;
+    // Not on eMMC or when lanes were measured here: under a 6 GB / eMMC emulation the engine's planner chose
+    // 4 read lanes and a 1500 MB cache and decoded at 1.6-1.8 tok/s, while these explicit settings (2 lanes,
+    // full cache) reached 2.0-2.1 tok/s (docs/BENCHMARKS.md).
+    const useAutoPlanner = input.requestedProfile === 'auto' && profile !== 'battery' && cacheMb >= 1500 && !emmc && !lanesMeasured;
     const floorMb = Math.max(512, Math.round((memory?.availableMb || 2048) - cacheMb));
     const auto = [...common, '--cache-mb', 'auto', '--cache-floor-mb', String(floorMb), '--cache-ceil-mb', String(Math.max(cacheMb, 256))];
     const args = useAutoPlanner ? auto : explicit;
