@@ -31,7 +31,10 @@ export type ModelArchitecture = {
   leadingDenseBlocks: number; tensorCount: number; expertBytes: number; denseBytes: number; expertTensorCount: number; fileBytes: number; isMoe: boolean; streamable: boolean;
 };
 export type StorageBenchmark = {sequentialMBps: number; random: {lanes: number; randomMBps: number}[]; bestLanes: number; bestRandomMBps: number; note: string};
-export type ThreadTuning = {threads: number; decodeTps: number; prefillTps: number; measuredAt: number; candidates: {threads: number; decodeTps: number; prefillTps: number}[]};
+export type ThreadTuning = {threads: number; decodeTps: number; prefillTps: number; measuredAt: number; candidates: {threads: number; decodeTps: number; prefillTps: number}[];
+  /** For MoE models that exceed the RAM budget: which engine the on-phone benchmark measured faster (memory-mapped llama.rn vs expert streaming). */
+  moeEngine?: 'llama.rn' | 'moe-stream';
+  moeMeasured?: {mmapDecodeTps: number; mmapTtftMs: number; streamDecodeTps: number; streamTtftMs: number}};
 
 export type InferencePlan = {
   engine: 'llama.rn' | 'moe-stream';
@@ -211,7 +214,14 @@ export function planInference(input: PlanInput): InferencePlan {
     if (input.moeMode === 'off') reasons.push('MoE streaming is turned off in Settings.');
     else if (!input.moeEngineAvailable) reasons.push('The MoE streaming engine is not available on this phone (needs ARM64 and Android 10+).');
     else if (fits) reasons.push('The whole model fits in the RAM budget, so it runs fully in memory without streaming.');
-    else { engine = 'moe-stream'; reasons.push('The model is larger than the RAM budget, so only the routed experts are streamed from storage.'); }
+    else if (input.tuning?.moeEngine === 'llama.rn' && input.tuning.moeMeasured) {
+      const m = input.tuning.moeMeasured;
+      reasons.push(`The model is larger than the RAM budget. On this phone the benchmark measured memory-mapped loading faster than expert streaming (${m.mmapDecodeTps.toFixed(2)} vs ${m.streamDecodeTps.toFixed(2)} tok/s), so the standard engine is used. Re-run the benchmark to re-check.`);
+    } else {
+      engine = 'moe-stream';
+      const m = input.tuning?.moeEngine === 'moe-stream' ? input.tuning.moeMeasured : undefined;
+      reasons.push('The model is larger than the RAM budget, so only the routed experts are streamed from storage' + (m ? ` (measured faster here: ${m.streamDecodeTps.toFixed(2)} vs ${m.mmapDecodeTps.toFixed(2)} tok/s with mmap).` : '. Run the benchmark to check whether memory-mapped loading is faster on this phone.'));
+    }
   }
 
   // ---- threads ----

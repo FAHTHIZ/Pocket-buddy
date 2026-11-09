@@ -230,7 +230,7 @@ export async function benchmarkThisPhone(onStatus:(s:string)=>void):Promise<Benc
  const arch=await inspectModel(path);
  // 1. existing implementation
  try{
-  onStatus('Run 1/2: existing defaults (llama.rn, previous settings)…');
+  onStatus('Run 1: existing defaults (llama.rn, previous settings)…');
   const t0=Date.now();const ctx=(await initLlamaRn(legacyLlamaOptions(path,config),config.nGpuLayers)).context;const loadMs=Date.now()-t0;
   await timedLlamaRun(ctx,0,4);
   const r=await timedLlamaRun(ctx,0,64);const rss=await rssMb();
@@ -241,12 +241,33 @@ export async function benchmarkThisPhone(onStatus:(s:string)=>void):Promise<Benc
  let plan=await buildPlan(path,config);
  try{
   if(plan.engine==='moe-stream'&&plan.moe&&MoE){
-   onStatus('Run 2/2: MoE expert streaming…');
+   onStatus('Run 2/3: MoE expert streaming…');
    const server=await startMoe(path,plan.moe.args,onStatus);
    await timedMoeRun(server,4);
    const r=await timedMoeRun(server,64);const st=await MoE.status();
-   runs.push({label:'Adaptive (expert streaming)',engine:'bmoe '+(plan.moe.useAutoPlanner?'auto':'explicit'),loadMs:server.loadMs,ttftMs:r.ttftMs,prefillTps:r.prefillTps,decodeTps:r.decodeTps,rssMb:st.rssMb,threads:plan.nThreads,nCtx:plan.nCtx,promptTokens:r.promptTokens,generatedTokens:r.generated});
+   const streamRun:BenchmarkRun={label:'Adaptive (expert streaming)',engine:'bmoe '+(plan.moe.useAutoPlanner?'auto':'explicit'),loadMs:server.loadMs,ttftMs:r.ttftMs,prefillTps:r.prefillTps,decodeTps:r.decodeTps,rssMb:st.rssMb,threads:plan.nThreads,nCtx:plan.nCtx,promptTokens:r.promptTokens,generatedTokens:r.generated};
+   runs.push(streamRun);
    moeServer=server;
+   // 3. the same model memory-mapped with the adaptive llama.rn settings; keep whichever engine answers a typical reply sooner.
+   let mmapRun:BenchmarkRun|null=null;
+   try{
+    onStatus('Run 3/3: memory-mapped with adaptive settings…');
+    await releaseAll();
+    const mplan=await buildPlan(path,{...config,moeMode:'off'});
+    const t0=Date.now();const ctx=(await initLlamaRn(adaptiveLlamaOptions(path,mplan),0)).context;const loadMs=Date.now()-t0;
+    await timedLlamaRun(ctx,mplan.nThreads,4);
+    const m=await timedLlamaRun(ctx,mplan.nThreads,64);const rss=await rssMb();
+    mmapRun={label:'Adaptive (memory-mapped)',engine:'llama.rn',loadMs,ttftMs:m.ttftMs,prefillTps:m.prefillTps,decodeTps:m.decodeTps,rssMb:rss,threads:mplan.nThreads,nCtx:mplan.nCtx,promptTokens:m.promptTokens,generatedTokens:m.generated};
+    runs.push(mmapRun);
+    try{await ctx.release();}catch{}
+   }catch(error){runs.push({label:'Adaptive (memory-mapped)',engine:'llama.rn',loadMs:0,ttftMs:0,prefillTps:0,decodeTps:0,rssMb:0,threads:0,nCtx:plan.nCtx,promptTokens:0,generatedTokens:0,error:(error instanceof Error?error.message:String(error)).slice(0,160)});}
+   const replyMs=(run:BenchmarkRun)=>run.decodeTps>0?run.ttftMs+64000/run.decodeTps:Infinity;
+   const winner:'llama.rn'|'moe-stream'=mmapRun&&replyMs(mmapRun)<replyMs(streamRun)?'llama.rn':'moe-stream';
+   const previous=await loadTuning(tuningKey(probe,path));
+   await saveTuning(tuningKey(probe,path),{...(previous||{threads:0,decodeTps:0,prefillTps:0,candidates:[]}),measuredAt:Date.now(),moeEngine:winner,
+    moeMeasured:{mmapDecodeTps:mmapRun?.decodeTps||0,mmapTtftMs:mmapRun?.ttftMs||0,streamDecodeTps:streamRun.decodeTps,streamTtftMs:streamRun.ttftMs}});
+   notes.push('Engine kept for this model on this phone: '+(winner==='llama.rn'?'memory-mapped (faster here)':'expert streaming (faster here)')+', judged by first-token time plus 64 tokens of decoding.');
+   moeServer=null;localContext=null;
   }else{
    onStatus('Run 2/2: adaptive settings, tuning threads…');
    const t0=Date.now();const ctx=(await initLlamaRn(adaptiveLlamaOptions(path,plan),plan.nGpuLayers)).context;const loadMs=Date.now()-t0;
@@ -262,7 +283,7 @@ export async function benchmarkThisPhone(onStatus:(s:string)=>void):Promise<Benc
  if(!localContext&&!moeServer){onStatus('Reloading model…');const loaded=await initializeLocal(path,config);plan=loaded.plan||plan;localRuntimeStatus=loaded.status;}
  activePlan=plan;
  notes.push('Same prompt, greedy decoding, 64 tokens, warm-up run excluded. RSS is the resident memory of the process running inference.');
- if(arch)notes.push(arch.isMoe?'MoE model: run 1 maps the whole file with mmap; run 2 streams only routed experts.':'Dense model: expert streaming does not apply; run 2 differs in threads, batch, KV cache and parallel slots.');
+ if(arch)notes.push(arch.isMoe?'MoE model: run 1 maps the whole file with the previous settings; the streaming run reads only routed experts; the memory-mapped run uses the adaptive threads and context.':'Dense model: expert streaming does not apply; run 2 differs in threads, batch, KV cache and parallel slots.');
  const report:BenchmarkReport={ranAt:Date.now(),device:describeDevice(probe).split('\n').join(' · '),model:path.split('/').pop()||path,architecture:arch?(arch.architecture+(arch.isMoe?' MoE':' dense')):'unknown',runs,notes};
  await saveBenchmarkReport(report);
  onStatus('');
