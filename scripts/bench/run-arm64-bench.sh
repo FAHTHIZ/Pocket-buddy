@@ -102,7 +102,7 @@ run_moe(){ # label, kind(llama|bmoe), args...
   else
     "${SCOPE[@]}" --setenv=LD_LIBRARY_PATH="$BDIR" "$BS" --port $PORT --data-dir "$WORK/bmdata" --catalog "$WORK/cat.json" --api-key-file "$WORK/key" --chat-only -m "$WORK/lfm.gguf" "$@" > "$OUT/moe-$label.log" 2>&1 &
     url=http://127.0.0.1:$PORT; key=key-for-bench
-    for _ in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; [ $_ -gt 15 ] && ! pgrep -f "port $PORT" >/dev/null && break; sleep 1; done
+    for w in $(seq 1 1200); do s=$(curl -fs -H "Authorization: Bearer $key" $url/api/info | python3 -c "import json,sys;print(json.load(sys.stdin)['state'])" 2>/dev/null); [ "$s" = ready ] || [ "$s" = error ] && break; [ "$w" -gt 15 ] && ! pgrep -f "port $PORT" >/dev/null && break; sleep 1; done
   fi
   local pid=$(pgrep -n -x llama-server || pgrep -n -x bmoe-server)
   local load=$(python3 -c "import time;print(round(time.time()-$t0,2))")

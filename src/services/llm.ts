@@ -239,6 +239,9 @@ export async function benchmarkThisPhone(onStatus:(s:string)=>void):Promise<Benc
  }catch(error){runs.push({label:'Existing defaults',engine:'llama.rn',loadMs:0,ttftMs:0,prefillTps:0,decodeTps:0,rssMb:0,threads:0,nCtx:config.nCtx,promptTokens:0,generatedTokens:0,error:(error instanceof Error?error.message:String(error)).slice(0,160)});}
  // 2. adaptive engine
  let plan=await buildPlan(path,config);
+ // For a MoE model larger than the budget, compare streaming against memory-mapping whatever the current choice is.
+ const streamPlan=arch?.isMoe&&config.moeMode!=='off'?await buildPlan(path,{...config,moeMode:'on'}):null;
+ if(streamPlan?.engine==='moe-stream')plan=streamPlan;
  try{
   if(plan.engine==='moe-stream'&&plan.moe&&MoE){
    onStatus('Run 2/3: MoE expert streaming…');

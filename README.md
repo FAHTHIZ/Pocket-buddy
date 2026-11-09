@@ -17,7 +17,7 @@ Pocket Buddy is an Android app in the spirit of PocketPal: install it, tap one b
 - **Audio.** Music and songs, text-to-speech with 11 voices, and sound effects, with an in-chat player.
 - **Media library.** Everything you create is kept on the phone, filterable by type, with save, share and delete.
 - **Adapts to your phone automatically.** The same APK detects the CPU cores, ARM instructions, RAM, storage type, GPU, battery and temperature, reads the model's architecture, and picks the engine, threads, context and memory budget. Profiles: Automatic (default), Battery Saver, Balanced, Maximum Performance. It always leaves RAM for Android and your other apps.
-- **Heavy MoE models on 6 GB phones.** Mixture-of-Experts models that do not fit in RAM are run with expert streaming (BigMoeOnEdge engine, bundled): only the experts each token needs are read from storage into a bounded RAM cache, with parallel reads overlapped with compute. Dense models such as the default Qwen3.8 2B keep the normal fast engine.
+- **Heavy MoE models on 6 GB phones.** Mixture-of-Experts models that do not fit in RAM can run with expert streaming (BigMoeOnEdge engine, bundled): only the experts each token needs are read from storage into a bounded RAM cache, with parallel reads overlapped with compute. Pocket Buddy measures streaming against plain memory-mapping on your phone and uses the faster one. Dense models such as the default Qwen3.8 2B keep the normal fast engine.
 - Streaming Markdown chat, chat history, edit and regenerate, read aloud, voice dictation, tools (calculator, time, web search via SearXNG, webpage reader, GitHub, MCP connectors).
 
 ## Using it
@@ -55,7 +55,7 @@ Every model in the pickers is labelled Free or Paid. Paid models draw pollen fro
 ## Speed, heavy models and your phone
 
 - **Everyday chat:** keep the default Qwen3.8 2B. It is a dense model, so it runs fully in memory on the normal llama.cpp engine. On a 6 GB phone it is the fastest option.
-- **Heavier, smarter answers:** Models → LFM2 8B-A1B Abliterated (MoE). On a 6 GB phone it does not fit in RAM, so Pocket Buddy streams its experts from storage. Run Settings → Performance → Benchmark this phone once with it loaded: it also times memory-mapped loading and keeps whichever is faster on your phone. On eMMC storage (for example an Infinix Hot 10S / Helio G85), expect about 2 tokens per second or less and a load of a minute or more, so choose it for quality, not speed. On 12 GB+ phones it loads fully into memory and is much faster, with no settings to change.
+- **Heavier, smarter answers:** Models → LFM2 8B-A1B Abliterated (MoE). On a 6 GB phone it does not fit in RAM, so part of it is read from storage while answering. Run Settings → Performance → Benchmark this phone once with it loaded: it times memory-mapped loading against expert streaming and keeps whichever is faster on your phone. On eMMC storage (for example an Infinix Hot 10S / Helio G85), expect about 2 tokens per second or less and a load of a minute or more, so choose it for quality, not speed. On 12 GB+ phones it loads fully into memory and is much faster, with no settings to change.
 - **Settings → On-device → Performance** shows what was detected and why each setting was chosen. It has the profile picker, **Benchmark this phone** (previous settings against the adaptive engine, on your own phone) and **Measure storage speed**.
 - Measured numbers and how they were obtained: [docs/BENCHMARKS.md](docs/BENCHMARKS.md). How the engine works: [docs/ADAPTIVE_ENGINE.md](docs/ADAPTIVE_ENGINE.md).
 

@@ -50,7 +50,7 @@ export default function PerformancePanel({config,patch}:{config:AppConfig;patch:
   <View style={s.row}>{PROFILES.map(p=><Pressable key={p.id} onPress={()=>patch({perfProfile:p.id})} style={[s.chip,(config.perfProfile||'auto')===p.id&&s.chipOn]}><Text style={[s.chipText,(config.perfProfile||'auto')===p.id&&s.chipTextOn]}>{p.label}</Text></Pressable>)}</View>
   <Text style={s.help}>{PROFILES.find(p=>p.id===(config.perfProfile||'auto'))?.hint}</Text>
   <Text style={s.label}>MoE expert streaming</Text>
-  <View style={s.row}>{(['auto','off'] as const).map(m=><Pressable key={m} onPress={()=>patch({moeMode:m})} style={[s.chip,(config.moeMode||'auto')===m&&s.chipOn]}><Text style={[s.chipText,(config.moeMode||'auto')===m&&s.chipTextOn]}>{m==='auto'?'Automatic':'Off'}</Text></Pressable>)}</View>
+  <View style={s.row}>{(['auto','on','off'] as const).map(m=><Pressable key={m} onPress={()=>patch({moeMode:m})} style={[s.chip,(config.moeMode||'auto')===m&&s.chipOn]}><Text style={[s.chipText,(config.moeMode||'auto')===m&&s.chipTextOn]}>{m==='auto'?'Automatic':m==='on'?'Always stream':'Off'}</Text></Pressable>)}</View>
   <Text style={s.help}>{moeOk===false?'Not available on this phone (needs ARM64 and Android 10+). MoE models still run with the standard engine.':'Used only when the model file is a Mixture-of-Experts model that does not fit in the RAM budget. Dense models such as Qwen3.8 2B always use the standard engine.'}</Text>
   <Text style={s.label}>Context window</Text>
   <View style={s.row}>

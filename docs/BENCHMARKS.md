@@ -69,15 +69,28 @@ What this shows, honestly:
 - Streaming is I/O-bound: each token waits about 1.3 s for flash reads and computes for only 0.07 s. A larger expert cache or faster storage helps it directly.
 - Both stayed inside the 2468 MB limit without being killed.
 - The cgroup throttle limits bytes per second, not I/O operations. Real eMMC is much slower at small random reads. That penalises memory-mapped page faults (small reads) more than bmoe's large O_DIRECT expert reads, so this setup may favour mmap compared with a real phone.
-<!-- IOPS_SECTION -->
 
-Because the faster engine depends on the phone, **Pocket Buddy measures it instead of assuming it.** For a MoE model that does not fit in the RAM budget, **Benchmark this phone** runs:
+To check that last point, run 42580071211 repeated everything with an extra **6000 read-IOPS cap** (`IOReadIOPSMax`):
 
-1. the existing settings;
-2. expert streaming;
-3. memory-mapping with the adaptive settings.
+| Configuration (250 MB/s + 6000 IOPS) | Cold first token | Warm first token | Decode cold / warm | Expert-cache hit |
+|---|---|---|---|---|
+| llama.cpp mmap, existing settings (2 threads) | 14.88 s | 2.76 s | 2.44 / 2.98 tok/s | — |
+| llama.cpp mmap, adaptive threads (4) | 16.03 s | 2.58 s | 2.64 / 3.06 tok/s | — |
+| bmoe streaming, Pocket Buddy's eMMC plan | 14.56 s | 12.62 s | 2.17 / 2.10 tok/s | 68–69% |
+| bmoe streaming, engine auto planner | 14.66 s | 13.21 s | 1.83 / 1.87 tok/s | 65–66% |
 
-It keeps whichever engine gives a typical reply sooner (first-token time + 64 tokens) and stores that choice per phone and model. The planner follows it from then on and shows the measured speeds under "Why these settings?". Until you run the benchmark, a MoE model that does not fit uses expert streaming. Its RAM footprint is bounded and predictable (cache + dense weights), while a memory-mapped model larger than the budget makes Android reclaim pages under pressure.
+The IOPS cap barely changed anything, so the ranking held: memory-mapping, then Pocket Buddy's streaming plan, then the engine's auto planner.
+
+The planner applies these results as follows:
+
+- **Automatic default:** if the RAM budget covers at least half of a MoE model, the model is memory-mapped with the adaptive llama.rn settings. That is the measured faster case here, where the budget covers 56% of LFM2 8B. A MoE model much larger than the budget (for example a 35B-A3B on a 6 GB phone) is expert-streamed, because the page cache could hold only a small part of it.
+- **Benchmark this phone** overrides that default with a real measurement. For a MoE model that does not fit, it runs:
+  1. the existing settings;
+  2. expert streaming;
+  3. memory-mapping with the adaptive settings.
+
+  It keeps whichever engine gives a typical reply sooner (first-token time + 64 tokens), stores that choice per phone and model, and shows the measured timings under "Why these settings?".
+- **MoE streaming → Always stream** forces streaming, and **Off** never streams.
 
 **Bottom line for a 6 GB eMMC phone:** the 8B MoE model is for better answers, not speed. For fast everyday chat, the 2B dense model (Qwen3.8 2B) remains the fastest choice by a wide margin.
 

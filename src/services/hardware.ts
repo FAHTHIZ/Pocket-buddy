@@ -11,7 +11,7 @@ import {NativeEventEmitter, NativeModules, Platform} from 'react-native';
 
 export type PerfProfile = 'auto' | 'battery' | 'balanced' | 'max';
 export type EffectiveProfile = Exclude<PerfProfile, 'auto'>;
-export type MoeMode = 'auto' | 'off';
+export type MoeMode = 'auto' | 'on' | 'off';
 
 export type CoreInfo = {id: number; maxMhz: number; name: string};
 export type ClusterInfo = {maxMhz: number; count: number; name: string};
@@ -219,12 +219,17 @@ export function planInference(input: PlanInput): InferencePlan {
     if (input.moeMode === 'off') reasons.push('MoE streaming is turned off in Settings.');
     else if (!input.moeEngineAvailable) reasons.push('The MoE streaming engine is not available on this phone (needs ARM64 and Android 10+).');
     else if (fits) reasons.push('The whole model fits in the RAM budget, so it runs fully in memory without streaming.');
-    else if (input.tuning?.moeEngine === 'llama.rn' && input.tuning.moeMeasured) {
-      reasons.push(`The model is larger than the RAM budget, but on this phone the benchmark measured memory-mapped loading faster than expert streaming (${measuredMoe(input.tuning.moeMeasured)}), so the standard engine is used. Re-run the benchmark to re-check.`);
+    else if (input.moeMode === 'on') { engine = 'moe-stream'; reasons.push('The model is larger than the RAM budget and MoE streaming is set to Always, so only the routed experts are streamed from storage.'); }
+    else if (input.tuning?.moeEngine && input.tuning.moeMeasured) {
+      if (input.tuning.moeEngine === 'moe-stream') engine = 'moe-stream';
+      reasons.push(`The model is larger than the RAM budget; the benchmark on this phone measured ${engine === 'moe-stream' ? 'expert streaming' : 'memory-mapped loading'} faster (${measuredMoe(input.tuning.moeMeasured)}), so that engine is used. Re-run the benchmark to re-check.`);
     } else {
-      engine = 'moe-stream';
-      const m = input.tuning?.moeEngine === 'moe-stream' ? input.tuning.moeMeasured : undefined;
-      reasons.push('The model is larger than the RAM budget, so only the routed experts are streamed from storage' + (m ? ` (measured faster on this phone: ${measuredMoe(m)}).` : '. Run the benchmark to check whether memory-mapped loading is faster on this phone.'));
+      // Measured in a 6 GB / eMMC emulation (docs/BENCHMARKS.md): when the budget covers about half of the file or more
+      // (LFM2 8B-A1B: 2468 MB of 4376 MB), memory-mapping decoded faster (2.4-3.1 tok/s) than expert streaming
+      // (best plan 2.0-2.2 tok/s) and had a far shorter warm first token. Streaming is kept for models much larger than RAM.
+      const share = fitBudget / Math.max(1, weightsMb);
+      if (share >= 0.5) reasons.push(`The model is larger than the RAM budget, but the budget still covers ${Math.round(share * 100)}% of it, where memory-mapped loading measured faster than expert streaming, so the standard engine is used. Benchmark this phone to compare streaming here, or set MoE streaming to Always.`);
+      else { engine = 'moe-stream'; reasons.push(`The model is much larger than the RAM budget (budget covers ${Math.round(share * 100)}%), so only the routed experts are streamed from storage. Benchmark this phone to compare with memory-mapped loading.`); }
     }
   }
 
@@ -247,7 +252,9 @@ export function planInference(input: PlanInput): InferencePlan {
 
   // ---- context & KV ----
   const cap = profile === 'battery' ? 2048 : profile === 'balanced' ? 4096 : totalMb >= 11000 ? 16384 : 8192;
-  const resident = engine === 'moe-stream' ? Math.round((arch?.denseBytes || 0) / 1048576) : weightsMb;
+  // A memory-mapped MoE model larger than the budget is paged in and out by the kernel; only part of it is ever resident.
+  const resident = engine === 'moe-stream' ? Math.round((arch?.denseBytes || 0) / 1048576)
+    : arch?.isMoe && weightsMb + 600 > budgetMb ? Math.max(0, budgetMb - 600) : weightsMb;
   let kvType: 'f16' | 'q8_0' = 'f16';
   let nCtx = 2048;
   const free = budgetMb - resident - computeMb - (engine === 'moe-stream' ? 1500 : 0);
@@ -277,7 +284,8 @@ export function planInference(input: PlanInput): InferencePlan {
 
   const holdBudget = profile === 'battery' && memory ? Math.max(budgetMb, memoryBudgetMb(memory, 'balanced').budgetMb) : budgetMb;
   const fitsInMemory = engine === 'moe-stream' ? true : weightsMb + kvMb + computeMb <= holdBudget;
-  if (!fitsInMemory) reasons.push(`Warning: this model (${weightsMb} MB) plus its buffers exceeds the ${budgetMb} MB budget; Android may close other apps or the model may be slow.`);
+  if (!fitsInMemory && arch?.isMoe) reasons.push(`This MoE model (${weightsMb} MB) is larger than the ${budgetMb} MB budget, so it is memory-mapped: Android pages its weights in from storage as they are used, and can reclaim them for other apps.`);
+  else if (!fitsInMemory) reasons.push(`Warning: this model (${weightsMb} MB) plus its buffers exceeds the ${budgetMb} MB budget; Android may close other apps or the model may be slow.`);
 
   const plan: InferencePlan = {
     engine, profile, requestedProfile: input.requestedProfile, nCtx, nBatch, nUbatch, nThreads, nParallel: 1, useMmap: true, useMlock: false,
@@ -368,7 +376,7 @@ export function describeDevice(probe: HardwareProbe | null): string {
 /** Model suggestions from measured RAM, not from phone names. */
 export function recommendModels(totalMb: number): {dense: string; moe: string | null; note: string} {
   if (totalMb < 4500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: null, note: 'Under 4.5 GB RAM: stay with 2B dense models.'};
-  if (totalMb < 7500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: 'LFM2 8B-A1B abliterated IQ4_XS (4.5 GB, expert streaming)', note: '6 GB class: the 2B dense model is fastest for chat; the 8B MoE streams experts from storage for higher quality.'};
+  if (totalMb < 7500) return {dense: 'Qwen3.8 2B Uncensored Q4_K_M (1.2 GB)', moe: 'LFM2 8B-A1B abliterated IQ4_XS (4.5 GB, read partly from storage)', note: '6 GB class: the 2B dense model is fastest for chat; the 8B MoE gives higher quality at about 2-3 tok/s (benchmark picks memory-mapped or expert streaming).'};
   if (totalMb < 11500) return {dense: 'Qwen3.8 4B class Q4_K_M', moe: 'LFM2 8B-A1B abliterated IQ4_XS (fits fully in RAM)', note: '8 GB class: 8B-A1B MoE fits in RAM without streaming.'};
   return {dense: 'Qwen3.8 8B class Q4_K_M', moe: 'Qwen3.6 35B-A3B abliterated (expert streaming)', note: '12 GB+: large MoE models with expert streaming.'};
 }
