@@ -25,8 +25,10 @@ export async function moeEngineAvailable():Promise<boolean>{if(!MoE)return false
 
 async function gpuDevices():Promise<string[]>{try{return(await getBackendDevicesInfo()).filter((d:any)=>d.type!=='cpu'&&!/CPU/i.test(String(d.backend))).map((d:any)=>String(d.deviceName||d.backend));}catch{return[];}}
 
-export async function buildPlan(path:string,config:AppConfig):Promise<InferencePlan>{
- const[probe,state,arch,moeOk,storage,devices]=await Promise.all([probeHardware(),runtimeState(),inspectModel(path),moeEngineAvailable(),savedStorageBenchmark(),gpuDevices()]);
+export async function buildPlan(path:string,config:AppConfig,heldMb=0):Promise<InferencePlan>{
+ const[probe,raw,arch,moeOk,storage,devices]=await Promise.all([probeHardware(),runtimeState(),inspectModel(path),moeEngineAvailable(),savedStorageBenchmark(),gpuDevices()]);
+ // When a model is already loaded its own memory is not "free"; count it back so re-planning compares like with like.
+ const state=raw&&heldMb>0?{...raw,memory:{...raw.memory,availableMb:raw.memory.availableMb+heldMb}}:raw;
  const tuning=await loadTuning(tuningKey(probe,path));
  return planInference({probe,memory:state?.memory,power:state?.power,arch,modelBytes:arch?.fileBytes||0,requestedProfile:config.perfProfile||'auto',moeMode:config.moeMode||'auto',moeEngineAvailable:moeOk,manualContext:config.autoContext===false?config.nCtx:undefined,manualGpuLayers:config.nGpuLayers,tuning,storage,gpuDevices:devices});
 }
@@ -98,10 +100,33 @@ async function initializeLocal(path:string,config:AppConfig,onStatus?:(s:string)
  return{status:loaded.status+' · safe defaults',plan};
 }
 
+let replanDue=false,memoryPressure=false,lastReplan=0;
+/** Re-evaluates the plan between messages: profile (battery/charging/thermal) every time, and context size after Android reports memory pressure. */
+async function reevaluate(config:AppConfig):Promise<void>{
+ if(!activePlan||!activeLocalPath)return;
+ if(!replanDue&&Date.now()-lastReplan<30000)return;
+ replanDue=false;lastReplan=Date.now();
+ const held=Math.max(0,(await rssMb())-150);
+ let next:InferencePlan;try{next=await buildPlan(activeLocalPath,config,held);}catch{return;}
+ if(memoryPressure&&localContext&&config.autoContext!==false&&next.engine==='llama.rn'&&next.nCtx<activePlan.nCtx){
+  memoryPressure=false;
+  const path=activeLocalPath;
+  try{await loadLocalModel(path,true);if(activePlan)activePlan={...activePlan,reasons:[...activePlan.reasons,'Android reported low memory, so the context was reduced to '+activePlan.nCtx+' tokens.']};}catch{}
+  return;
+ }
+ memoryPressure=false;
+ if(next.profile!==activePlan.profile||next.nThreads!==currentThreads){
+  currentThreads=next.nThreads;
+  activePlan={...activePlan,profile:next.profile,nThreads:next.nThreads,reasons:[...next.reasons.slice(0,1),...activePlan.reasons.slice(1)]};
+  localRuntimeStatus=localRuntimeStatus.replace(/ · (battery|balanced|max)( · .*)?$/,'')+' · '+next.profile+' · '+next.nThreads+' threads';
+ }
+}
 function watchHardware():void{
  if(unsubscribeEvents)return;
  unsubscribeEvents=subscribeHardwareEvents(event=>{
   if(!activePlan)return;
+  if(event.type==='lowMemory'||(event.type==='trimMemory'&&event.level>=15))memoryPressure=true;
+  replanDue=true;
   if(event.type==='thermal'){
    const base=activePlan.nThreads;
    currentThreads=event.thermalStatus>=3?Math.max(2,base-2):event.thermalStatus>=2?Math.max(2,base-1):base;
@@ -310,6 +335,7 @@ async function moeCompletion(config:AppConfig,messages:ModelMessage[],tools:Tool
 }
 async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{
  if(prewarmTask)await prewarmTask;
+ if(!moeServer)await reevaluate(config).catch(()=>{});
  void rememberPrefix(messages,tools);
  if(moeServer)return moeCompletion(config,messages,tools,onToken);
  if(!localContext)throw new Error('No chat model is loaded yet. Open Models to download Qwen3.8, or pick a cloud chat model.');
