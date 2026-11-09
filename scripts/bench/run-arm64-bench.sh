@@ -107,10 +107,14 @@ run_moe(){ # label, kind(llama|bmoe), args...
   local warm=$(timeout 1800 python3 "$HERE/chat_probe.py" $url "$key" "$PROMPT" 48 || echo '{"error":"request failed"}')
   local oom=$(grep -c -i "killed\|out of memory" "$OUT/moe-$label.log" || true)
   echo "{\"label\":\"$label\",\"load_s\":$load,\"peak_rss_mb\":$(hwm ${pid:-0}),\"oom_lines\":$oom,\"cold\":$cold,\"warm\":$warm}" >> "$OUT/moe.jsonl"
-  sudo pkill -f "port 8092"; sleep 3
+  sudo pkill -f "port 8092"
+  for _ in $(seq 1 60); do ss -ltn | grep -q ":8092 " || break; sleep 1; done
+  sudo pkill -9 -f "port 8092" 2>/dev/null; sleep 2
 }
 : > "$OUT/moe.jsonl"
 run_moe existing-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa off -t "$BASE_T" --no-warmup
+# The same mmap path with the adaptive thread/flash-attention settings, for a fair comparison.
+run_moe adaptive-mmap llama -c 4096 -b 256 -ub 256 -np 1 -fa auto -t "$CORES" -tb "$CORES" --no-warmup
 # Exactly the argument sets Pocket Buddy's planner emits for a 6 GB eMMC phone (Balanced, and Automatic).
 # The data folder is kept between the two runs, as on the phone, so the second launch can use the routing record.
 rm -rf "$WORK/bmdata"
