@@ -23,6 +23,14 @@ def releaseSigningConfigured = releaseSigning.values().every {
     it != null && !it.toString().trim().isEmpty()
 }
 
+def moeEngineVersion = "0.40.2"
+def moeEngineUrl = "https://github.com/Helldez/BigMoeOnEdge/releases/download/v${moeEngineVersion}/app-dev-release.apk"
+def moeEngineSha256 = "b79fd8a83155b838819e0b1b368b1545469a9f51cac4e995be84e3eb5ae1a419"
+def moeEngineEnabled = reactNativeArchitectures.contains("arm64-v8a") && (project.findProperty("pocketBuddyMoeEngine") ?: "true").toString() != "false"
+def moeEngineApk = new File(rootProject.projectDir, ".gradle/moe-engine/bigmoeonedge-${moeEngineVersion}.apk")
+def moeEngineJniDir = layout.buildDirectory.dir("generated/moe-engine/jniLibs").get().asFile
+def moeEngineAssetsDir = layout.buildDirectory.dir("generated/moe-engine/assets").get().asFile
+
 react {
     autolinkLibrariesWithApp()
 }
@@ -68,9 +76,79 @@ android {
     }
 
     packagingOptions {
-        jniLibs { useLegacyPackaging = false }
+        // The MoE engine is an executable (libbmoe-server.so) started from nativeLibraryDir, so
+        // native libraries must be extracted at install time rather than mapped from the APK.
+        jniLibs { useLegacyPackaging = true }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs += [moeEngineJniDir]
+            assets.srcDirs += [moeEngineAssetsDir]
+        }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Optional MoE expert-streaming engine (BigMoeOnEdge v0.40.2, Apache-2.0). The pinned upstream
+// Android release is downloaded once, verified by SHA-256, and its ARM64 engine libraries are
+// bundled. Vulkan (21 MB, measured no faster on phones upstream), the CLI and the Compose app's
+// own libraries are left out. Set -PpocketBuddyMoeEngine=false to build without it.
+// ---------------------------------------------------------------------------------------------
+tasks.register("prepareMoeEngine") {
+    def apkFile = moeEngineApk
+    def jniDir = moeEngineJniDir
+    def assetsDir = moeEngineAssetsDir
+    def enabled = moeEngineEnabled
+    outputs.dir(jniDir)
+    outputs.dir(assetsDir)
+    inputs.property("version", moeEngineVersion)
+    inputs.property("enabled", enabled)
+    doLast {
+        project.delete(jniDir, assetsDir)
+        jniDir.mkdirs(); assetsDir.mkdirs()
+        if (!enabled) { logger.lifecycle("MoE engine: disabled for this build"); return }
+        apkFile.parentFile.mkdirs()
+        def digest = { File f ->
+            def md = java.security.MessageDigest.getInstance("SHA-256")
+            f.withInputStream { is -> byte[] b = new byte[1 << 16]; int n; while ((n = is.read(b)) > 0) md.update(b, 0, n) }
+            md.digest().collect { String.format("%02x", it) }.join("")
+        }
+        if (!apkFile.exists() || digest(apkFile) != moeEngineSha256) {
+            logger.lifecycle("MoE engine: downloading ${moeEngineUrl}")
+            def tmp = new File(apkFile.path + ".part")
+            def connection = new URL(moeEngineUrl).openConnection()
+            connection.instanceFollowRedirects = true
+            connection.connectTimeout = 30000; connection.readTimeout = 120000
+            connection.inputStream.withStream { is -> tmp.withOutputStream { os -> os << is } }
+            def actual = digest(tmp)
+            if (actual != moeEngineSha256) { tmp.delete(); throw new GradleException("MoE engine checksum mismatch: ${actual}") }
+            tmp.renameTo(apkFile)
+        }
+        def keep = { String name ->
+            name in ["libbmoe-server.so", "libggml-base.so", "libggml.so", "libllama.so", "libllama-common.so", "libmtmd.so", "libggml-opencl.so", "libggml-hexagon.so"] ||
+                name.startsWith("libggml-cpu-android_") || name.startsWith("libggml-htp-v")
+        }
+        def abiDir = new File(jniDir, "arm64-v8a"); abiDir.mkdirs()
+        def count = 0
+        new java.util.zip.ZipFile(apkFile).withCloseable { zip ->
+            zip.entries().each { entry ->
+                if (entry.name.startsWith("lib/arm64-v8a/")) {
+                    def name = entry.name.substring("lib/arm64-v8a/".length())
+                    if (keep(name)) { new File(abiDir, name).withOutputStream { os -> os << zip.getInputStream(entry) }; count++ }
+                }
+            }
+        }
+        if (!new File(abiDir, "libbmoe-server.so").exists()) throw new GradleException("MoE engine: libbmoe-server.so missing from upstream APK")
+        def notices = new File(assetsDir, "moe-engine"); notices.mkdirs()
+        ["LICENSE", "THIRD_PARTY_LICENSES"].each { n ->
+            def src = rootProject.file("../third_party/bigmoeonedge/" + n)
+            if (src.exists()) new File(notices, n).text = src.text
+        }
+        logger.lifecycle("MoE engine: bundled ${count} ARM64 libraries")
+    }
+}
+tasks.named("preBuild").configure { dependsOn("prepareMoeEngine") }
 
 dependencies {
     implementation("com.facebook.react:react-android")
