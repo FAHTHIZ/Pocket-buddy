@@ -1,3 +1,7 @@
+> **[Download Pocket Buddy for Android (ARM64 APK)](https://github.com/FAHTHIZ/Pocket-buddy/releases/latest/download/PocketBuddy.apk)**
+>
+> CI publishes this APK only after the Android build and emulator launch checks pass. For the current run, use the [Android validation workflow](https://github.com/FAHTHIZ/Pocket-buddy/actions/workflows/android.yml) and download the APK artifact from a successful run.
+
 # Pocket Buddy
 
 **A local-first, ChatGPT-style AI conversation for Android, with dedicated media models.**
@@ -25,6 +29,8 @@ Official references: [Wan 2.2](https://github.com/Wan-Video/Wan2.2) · [Wan TI2V
 - Streaming Markdown chat, chat history, edit/regenerate, read aloud, voice input, calculator, SearXNG web search, webpage reading, GitHub and MCP connectors.
 
 ## Media workflow
+
+See the step-by-step [Media host setup guide](docs/MEDIA_SETUP.md) before connecting your phone.
 
 1. Install ComfyUI on a computer you control.
 2. Install FLUX.1 Schnell weights and import a compatible image workflow. Export it in ComfyUI API format.
