@@ -31,9 +31,15 @@ export default function ChatScreen(p:Props){
  const send=()=>{
   const value=draft.trim()||(selectedAttachments.length?'Please analyse the attached photo or video.':'');
   if(!value||p.busy||p.modelStarting)return;
+  const directMedia=detectDirectMediaRequest(value);
   if(createMode&&!editingId){setDraft('');p.onSend(value,modeToRequest(createMode,value,selectedAttachments),selectedAttachments);setSelectedAttachments([]);return;}
-  if(p.needsSetup&&!detectDirectMediaRequest(value)){
-   Alert.alert('Pick a chat model first','Download a local chat model or connect your own OpenAI-compatible provider.',[{text:'Not now',style:'cancel'},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
+  if(directMedia&&!editingId){setDraft('');p.onSend(value,{...directMedia,...(selectedAttachments.length?{inputAttachments:selectedAttachments}:{})},selectedAttachments);setSelectedAttachments([]);return;}
+  if(p.needsSetup){
+   if(selectedAttachments.length){
+    Alert.alert('Visual chat needs a vision-capable model','Your on-device GGUF model can chat but cannot inspect photos or video. Connect a vision-capable API endpoint to analyse this attachment.',[{text:'Not now',style:'cancel'},{text:'Set up vision API',onPress:()=>setShowProviderSetup(true)},{text:'Get local chat model',onPress:p.onGetDefaultModel}]);
+   }else{
+    Alert.alert('Pick a chat model first','Download a local chat model or connect your own OpenAI-compatible provider.',[{text:'Not now',style:'cancel'},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
+   }
    return;
   }
   const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value,undefined,selectedAttachments);
