@@ -1,8 +1,10 @@
 package com.pocketbuddy
 
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.media.MediaPlayer
 import android.media.MediaScannerConnection
@@ -12,7 +14,10 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.OpenableColumns
+import android.util.Base64
 import androidx.core.content.FileProvider
+import com.facebook.react.bridge.ActivityEventListener
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -30,7 +35,9 @@ import javax.net.ssl.HttpsURLConnection
  * HTTPS download to app storage, video thumbnails, in-app playback,
  * sharing, opening in other apps and saving to the phone gallery.
  */
-class PocketBuddyMediaModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context) {
+class PocketBuddyMediaModule(private val context: ReactApplicationContext) : ReactContextBaseJavaModule(context), ActivityEventListener {
+    private var chatPickerPromise: Promise? = null
+    init { context.addActivityEventListener(this) }
     override fun getName() = "PocketBuddyMedia"
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -86,6 +93,142 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
         } finally {
             try { retriever.release() } catch (_: Exception) {}
         }
+    }
+
+    @ReactMethod
+    fun pickChatAttachment(promise: Promise) {
+        if (chatPickerPromise != null) {
+            promise.reject("PICKER_BUSY", "A media picker is already open.")
+            return
+        }
+        val activity = currentActivity
+        if (activity == null) {
+            promise.reject("PICKER_UNAVAILABLE", "Pocket Buddy could not open the Android media picker.")
+            return
+        }
+        try {
+            chatPickerPromise = promise
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivityForResult(intent, CHAT_MEDIA_PICKER_REQUEST)
+        } catch (error: Exception) {
+            chatPickerPromise = null
+            promise.reject("PICKER_UNAVAILABLE", "Android could not open the photo/video picker.", error)
+        }
+    }
+
+    override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode != CHAT_MEDIA_PICKER_REQUEST) return
+        val promise = chatPickerPromise ?: return
+        chatPickerPromise = null
+        if (resultCode != Activity.RESULT_OK || data?.data == null) {
+            promise.resolve(null)
+            return
+        }
+        val source = data.data!!
+        Thread({
+            var copied: File? = null
+            try {
+                val resolver = context.contentResolver
+                val mime = (resolver.getType(source) ?: "").substringBefore(';').lowercase()
+                if (!mime.startsWith("image/") && !mime.startsWith("video/")) {
+                    throw IllegalArgumentException("Choose an image or video file.")
+                }
+                var displayName = "attachment"
+                resolver.query(source, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) displayName = cursor.getString(0) ?: displayName
+                }
+                val safeName = displayName.substringAfterLast('/').replace(Regex("[^A-Za-z0-9._-]"), "_").take(100).ifBlank { "attachment" }
+                val extension = extensionFor(mime, safeName.substringAfterLast('.', "bin"))
+                val destination = File(mediaDirectory(), "input_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString().take(6) + "." + extension)
+                copied = destination
+                var total = 0L
+                resolver.openInputStream(source)?.use { input ->
+                    destination.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > MAX_CHAT_ATTACHMENT_BYTES) throw IllegalArgumentException("This file is over the 120 MB mobile attachment limit.")
+                            output.write(buffer, 0, count)
+                        }
+                    }
+                } ?: throw IllegalStateException("Android could not read the selected media file.")
+                if (total <= 0L) throw IllegalArgumentException("The selected file is empty.")
+                val result = Arguments.createMap()
+                result.putString("path", destination.absolutePath)
+                result.putString("name", safeName)
+                result.putString("mimeType", mime)
+                result.putDouble("size", total.toDouble())
+                if (mime.startsWith("video/")) writeThumbnail(destination)?.let { result.putString("thumbnail", it) }
+                mainHandler.post { promise.resolve(result) }
+            } catch (error: Exception) {
+                try { copied?.delete() } catch (_: Exception) {}
+                mainHandler.post { promise.reject("ATTACHMENT_IMPORT_FAILED", error.message ?: "The selected media could not be imported.", error) }
+            }
+        }, "PocketBuddyImportChatMedia").start()
+    }
+
+    override fun onNewIntent(intent: Intent?) {}
+
+    private fun frameToBase64(bitmap: Bitmap, maxSide: Int): String {
+        val largest = maxOf(bitmap.width, bitmap.height)
+        val scaled = if (largest > maxSide) {
+            val factor = maxSide.toFloat() / largest.toFloat()
+            Bitmap.createScaledBitmap(bitmap, (bitmap.width * factor).toInt().coerceAtLeast(1), (bitmap.height * factor).toInt().coerceAtLeast(1), true)
+        } else bitmap
+        val bytes = java.io.ByteArrayOutputStream().use { stream ->
+            scaled.compress(Bitmap.CompressFormat.JPEG, 78, stream)
+            stream.toByteArray()
+        }
+        if (scaled !== bitmap) scaled.recycle()
+        bitmap.recycle()
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    @ReactMethod
+    fun getVisionFrames(path: String, mimeType: String, promise: Promise) {
+        val file = ownedMediaFile(path) ?: run {
+            promise.reject("ATTACHMENT_NOT_FOUND", "This attachment is no longer stored on the phone.")
+            return
+        }
+        Thread({
+            try {
+                val frames = Arguments.createArray()
+                if (mimeType.lowercase().startsWith("image/")) {
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalStateException("Android could not decode this image.")
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 1600) sample *= 2
+                    val bitmap = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample })
+                        ?: throw IllegalStateException("Android could not decode this image.")
+                    frames.pushString(frameToBase64(bitmap, 1280))
+                } else if (mimeType.lowercase().startsWith("video/")) {
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        retriever.setDataSource(file.absolutePath)
+                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                        for (percent in listOf(15L, 38L, 61L, 84L)) {
+                            val timeUs = if (durationMs > 0L) durationMs * 1000L * percent / 100L else (percent / 15L) * 1000000L
+                            val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
+                            frames.pushString(frameToBase64(frame, 768))
+                        }
+                    } finally {
+                        try { retriever.release() } catch (_: Exception) {}
+                    }
+                }
+                if (frames.size() == 0) throw IllegalStateException("No readable frames could be extracted from this media file.")
+                mainHandler.post { promise.resolve(frames) }
+            } catch (error: Exception) {
+                mainHandler.post { promise.reject("VISION_PREPROCESS_FAILED", error.message ?: "Could not prepare the media for visual analysis.", error) }
+            }
+        }, "PocketBuddyVisionPreprocess").start()
     }
 
     /**
@@ -307,6 +450,14 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
 
     override fun invalidate() {
         mainHandler.post { releasePlayer("stopped") }
+        val pending = chatPickerPromise
+        chatPickerPromise = null
+        pending?.reject("PICKER_CLOSED", "The media picker was closed with Pocket Buddy.")
         super.invalidate()
+    }
+
+    companion object {
+        private const val CHAT_MEDIA_PICKER_REQUEST = 7314
+        private const val MAX_CHAT_ATTACHMENT_BYTES = 120L * 1024L * 1024L
     }
 }
