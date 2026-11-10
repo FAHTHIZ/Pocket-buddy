@@ -69,11 +69,12 @@ export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
   const name=item.function.name;
   if(['web_search','read_webpage'].includes(name))return config.useWebSearch&&!!config.searxngUrl.trim();
   const comfy=config.mediaEngine==='comfyui'&&!!config.comfyUrl.trim();
-  if(name==='generate_audio')return config.mediaEngine==='pollinations'||(comfy&&!!config.audioWorkflow.trim());
-  if(['generate_image','generate_images','generate_video'].includes(name))return config.mediaEngine==='pollinations'||comfy;
+  if(name==='generate_audio')return comfy&&!!config.audioWorkflow.trim();
+  if(['generate_image','generate_images'].includes(name))return comfy&&!!config.imageWorkflow.trim();
+  if(name==='generate_video')return comfy&&!!config.videoWorkflow.trim();
   if(['generation_status','cancel_generation'].includes(name))return comfy;
   return true;
- }).map(item=>config.mediaEngine==='pollinations'&&item.function.name.startsWith('generate_')?{...item,requiresConfirmation:false}:item);
+ });
  if(await getGitHubToken())result.push(
   {type:'function',function:{name:'github_search_repositories',description:'Search public and accessible GitHub repositories with the connected GitHub account.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}}},
   {type:'function',function:{name:'github_read_file',description:'Read a file from a GitHub repository.',parameters:{type:'object',properties:{owner:{type:'string'},repo:{type:'string'},path:{type:'string'},ref:{type:'string'}},required:['owner','repo','path']}}},
