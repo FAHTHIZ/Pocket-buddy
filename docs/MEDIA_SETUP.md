@@ -44,6 +44,8 @@ In ComfyUI, export each workflow in **API format** (not the normal UI workflow J
 | `{{prompt}}` | The text prompt entered in Pocket Buddy |
 | `{{model}}` | The optional checkpoint filename entered in Settings |
 | `{{input_image}}` | The uploaded source image path for Wan image-to-video |
+| `{{shape}}`, `{{width}}`, `{{height}}` | The selected aspect ratio and suggested pixel dimensions |
+| `{{duration}}`, `{{count}}` | The selected clip length and requested batch count |
 
 Paste the API JSON into the corresponding field in **Pocket Buddy → Settings → Your media server**.
 

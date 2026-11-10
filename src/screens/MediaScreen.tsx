@@ -81,7 +81,7 @@ export default function MediaScreen({onBack}:Props){
    <View style={s.filters}>{(['all','image','video','audio'] as const).map(value=><Pressable key={value} onPress={()=>setFilter(value)} style={[s.filter,filter===value&&s.filterActive]}><Text style={[s.filterText,filter===value&&s.filterTextActive]}>{value==='all'?'All':value==='image'?'Images':value==='video'?'Videos':'Audio'}</Text></Pressable>)}</View>
    {!local.length&&!remote.length?<View style={s.empty}><Text style={s.emptyIcon}>▧</Text><Text style={s.emptyTitle}>Nothing here yet</Text><Text style={s.sub}>In chat, tap ＋ → Create images, or type “create 4 images of a dragon over Dhaka”.</Text></View>:null}
    <View style={s.grid}>
-    {local.map(({job,item})=><Pressable key={job.id} onPress={()=>open(job,item)} onLongPress={()=>actions(job,item)} style={[s.tile,{width:tile,height:tile}]}>
+    {local.map(({job,item})=><Pressable key={item.id} onPress={()=>open(job,item)} onLongPress={()=>actions(job,item)} style={[s.tile,{width:tile,height:tile}]}>
      {job.kind==='image'?<Image source={{uri:item.uri}} style={s.tileImage}/>:job.kind==='video'?<>{item.thumbnail?<Image source={{uri:item.thumbnail}} style={s.tileImage}/>:null}<View style={s.tileBadge}><Text style={s.tileBadgeText}>▶</Text></View></>:<View style={s.audioTile}><Text style={s.audioGlyph}>{playing===item.id?'■':'♫'}</Text><Text style={s.audioText} numberOfLines={3}>{job.prompt}</Text></View>}
     </Pressable>)}
    </View>

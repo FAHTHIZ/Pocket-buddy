@@ -15,7 +15,7 @@ Pocket Buddy keeps everyday chat on the phone with GGUF models through llama.cpp
 - FLUX.1-dev is an optional variant with non-commercial model-license terms. Review its license before using it.
 - These are downloadable model weights, not subscription APIs. The app does not require an external media account, balance or paid model catalog.
 - Wan 2.2 and FLUX.1 are large models. Typical Android phones are not suitable for running them locally. Pocket Buddy sends jobs to your own ComfyUI computer, which must have the weights, compatible nodes, sufficient compute and API-format workflows.
-- Optional `{{model}}` workflow text is replaced with the installed ComfyUI checkpoint filename configured in Pocket Buddy. A workflow can instead pin the loader filename directly. For image-to-video, add `{{input_image}}` to the Load Image filename input in the Wan workflow.
+- Workflow text tokens: `{{prompt}}`, `{{model}}`, `{{shape}}`, `{{width}}`, `{{height}}`, `{{duration}}` and `{{count}}` are replaced in string inputs. The model token uses the installed ComfyUI checkpoint filename configured in Pocket Buddy. For image-to-video, add `{{input_image}}` to the Load Image filename input in the Wan workflow.
 
 Official references: [Wan 2.2](https://github.com/Wan-Video/Wan2.2) · [Wan TI2V-5B weights](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) · [FLUX.1 source](https://github.com/black-forest-labs/flux) · [FLUX.1 Schnell weights and license](https://huggingface.co/black-forest-labs/FLUX.1-schnell) · [FLUX.1 Dev weights](https://huggingface.co/black-forest-labs/FLUX.1-dev)
 

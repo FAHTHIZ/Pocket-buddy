@@ -2,10 +2,14 @@ import{saveGenerationJob,listGenerationJobs,updateGenerationJob,deleteGeneration
 import{getComfyToken,loadConfig}from'./storage';
 import type{AudioStyle,GenerationJob,MediaKind,MediaRequest,MessageAttachment}from'../types';
 import{NativeModules}from'react-native';
-function replacePrompt(value:any,prompt:string,model:string):any{
- if(typeof value==='string')return value.replaceAll('{{prompt}}',prompt).replaceAll('__PROMPT__',prompt).replaceAll('{{model}}',model).replaceAll('__MODEL__',model);
- if(Array.isArray(value))return value.map(item=>replacePrompt(item,prompt,model));
- if(value&&typeof value==='object'){const next:Record<string,unknown>={};for(const [key,child]of Object.entries(value))next[key]=replacePrompt(child,prompt,model);return next;}
+function replacePrompt(value:any,prompt:string,model:string,variables:Record<string,string>):any{
+ if(typeof value==='string'){
+  let result=value.replaceAll('{{prompt}}',prompt).replaceAll('__PROMPT__',prompt).replaceAll('{{model}}',model).replaceAll('__MODEL__',model);
+  for(const [key,replacement]of Object.entries(variables))result=result.replaceAll('{{'+key+'}}',replacement).replaceAll('__'+key.toUpperCase()+'__',replacement);
+  return result;
+ }
+ if(Array.isArray(value))return value.map(item=>replacePrompt(item,prompt,model,variables));
+ if(value&&typeof value==='object'){const next:Record<string,unknown>={};for(const [key,child]of Object.entries(value))next[key]=replacePrompt(child,prompt,model,variables);return next;}
  return value;
 }
 function isPrivateComfyHost(hostname:string):boolean{
@@ -61,7 +65,7 @@ async function uploadComfyImage(item:MessageAttachment):Promise<string>{
  }catch(error){if(controller.signal.aborted)throw new Error('Uploading the source image to ComfyUI timed out.');throw error;}
  finally{clearTimeout(timer);}
 }
-async function submitOne(kind:MediaKind,prompt:string,model:string,inputAttachment?:MessageAttachment):Promise<string>{
+async function submitOne(kind:MediaKind,prompt:string,model:string,variables:Record<string,string>,inputAttachment?:MessageAttachment):Promise<string>{
  const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:kind==='video'?config.videoWorkflow:config.audioWorkflow;
  if(!json.trim())throw new Error('Add an API-format '+kind+' workflow in Settings. Put {{prompt}} in its positive prompt text input.');
  let workflow:any;try{workflow=JSON.parse(json);}catch{throw new Error('The saved ComfyUI workflow is not valid JSON.');}
@@ -72,15 +76,15 @@ async function submitOne(kind:MediaKind,prompt:string,model:string,inputAttachme
   inputImage=await uploadComfyImage(inputAttachment);
  }else if(json.includes('{{input_image}}')||json.includes('__INPUT_IMAGE__'))throw new Error('Attach a source photo for this image-to-video workflow.');
  if((json.includes('{{model}}')||json.includes('__MODEL__'))&&!model.trim())throw new Error('Enter the installed ComfyUI checkpoint filename in Settings; this workflow uses {{model}}.');
- const result=await request('/prompt',{method:'POST',body:JSON.stringify({prompt:replaceInput(replacePrompt(workflow,prompt,model),inputImage)})});
+ const result=await request('/prompt',{method:'POST',body:JSON.stringify({prompt:replaceInput(replacePrompt(workflow,prompt,model,variables),inputImage)})});
  if(!result.prompt_id)throw new Error(result.error?.message||'ComfyUI did not return a prompt ID. Check the workflow API export.');
  return String(result.prompt_id);
 }
-export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1,model='',inputAttachment?:MessageAttachment):Promise<GenerationJob[]>{
+export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1,model='',variables:Record<string,string>={},inputAttachment?:MessageAttachment):Promise<GenerationJob[]>{
  const amount=Math.max(1,Math.min(20,Math.floor(count)||1)),jobs:GenerationJob[]=[];
  for(let index=0;index<amount;index++){
   const distinct=amount===1?prompt:prompt+'\nGenerate a distinct variation, variation '+(index+1)+' of '+amount+'.';
-  const promptId=await submitOne(kind,distinct,model,inputAttachment);
+  const promptId=await submitOne(kind,distinct,model,variables,inputAttachment);
   const createdAt=Date.now(),job:GenerationJob={id:kind+'-'+promptId,kind,prompt:distinct,promptId,status:'queued',createdAt,outputs:[]};
   await saveGenerationJob(job);jobs.push(job);
  }
@@ -198,7 +202,10 @@ export async function createMedia(request:MediaRequest,onProgress?:MediaProgress
  const inputAttachment=request.kind==='video'?request.inputAttachments?.find(item=>(item.kind||'image')==='image'):undefined;
  if(request.kind==='video'&&request.inputAttachments?.length&&!inputAttachment)throw new Error('Choose a photo attachment for image-to-video; a video file cannot be used as the source image.');
  onProgress?.({items:[],done:0,total,status:'Queueing '+total+' '+request.kind+' job(s) on your ComfyUI server…'});
- const queued=await submitMediaJobs(request.kind,prompt,total,model,inputAttachment);
+ const shape=request.shape||(request.kind==='video'?'landscape':config.imageShape);
+ const dimensions=shape==='portrait'?{width:'768',height:'1344'}:shape==='landscape'?{width:'1344',height:'768'}:{width:'1024',height:'1024'};
+ const variables={duration:String(request.duration||config.videoDuration),shape,width:dimensions.width,height:dimensions.height,count:String(total)};
+ const queued=await submitMediaJobs(request.kind,prompt,total,model,variables,inputAttachment);
  onProgress?.({items:[],done:total,total,status:'Queued on your ComfyUI server'});
  return{attachments:[],failures:[],queued,engine:'comfyui'};
 }
