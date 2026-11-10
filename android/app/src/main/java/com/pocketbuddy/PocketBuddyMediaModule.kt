@@ -26,9 +26,9 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import java.io.File
 import java.io.FileInputStream
+import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
-import javax.net.ssl.HttpsURLConnection
 
 /**
  * Media helpers for generated images, videos and audio:
@@ -232,23 +232,37 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
     }
 
     /**
-     * GET or POST an HTTPS URL. Media responses are written to app storage and
+     * GET or POST an HTTPS URL (or private-LAN HTTP ComfyUI URL). Media responses are written to app storage and
      * returned as {type:'file', path, mimeType, size, thumbnail?}. JSON or text
      * responses (for example async job tickets) are returned as {type:'text', status, body}.
      */
+    private fun isPrivateComfyHost(hostname: String): Boolean {
+        val host = hostname.lowercase().removePrefix("[").removeSuffix("]").trimEnd('.')
+        if (host == "localhost" || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa")) return true
+        if (host == "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true
+        val parts = host.split('.')
+        if (parts.size != 4 || parts.any { part ->
+            val value = part.toIntOrNull()
+            value == null || value !in 0..255 || !part.matches(Regex("\\d{1,3}"))
+        }) return false
+        val a = parts[0].toInt()
+        val b = parts[1].toInt()
+        return a == 10 || a == 127 || (a == 172 && b in 16..31) || (a == 192 && b == 168) || (a == 169 && b == 254)
+    }
+
     @ReactMethod
     fun fetchToFile(url: String, method: String, headers: ReadableMap, body: String?, fallbackExtension: String, timeoutMs: Double, promise: Promise) {
         val uri = Uri.parse(url)
-        if (uri.scheme != "https" || uri.host.isNullOrBlank()) {
-            promise.reject("INVALID_MEDIA_URL", "Media requests must use HTTPS.")
+        if (uri.host.isNullOrBlank() || (uri.scheme != "https" && !(uri.scheme == "http" && isPrivateComfyHost(uri.host!!)))) {
+            promise.reject("INVALID_MEDIA_URL", "Media downloads require HTTPS, except for private-LAN ComfyUI hosts.")
             return
         }
         Thread({
-            var connection: HttpsURLConnection? = null
+            var connection: HttpURLConnection? = null
             var target: File? = null
             try {
-                connection = URL(url).openConnection() as HttpsURLConnection
-                connection.instanceFollowRedirects = true
+                connection = URL(url).openConnection() as HttpURLConnection
+                connection.instanceFollowRedirects = false
                 connection.requestMethod = if (method.equals("POST", true)) "POST" else "GET"
                 connection.connectTimeout = 30000
                 connection.readTimeout = timeoutMs.toInt().coerceIn(15000, 900000)

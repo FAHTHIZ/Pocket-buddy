@@ -11,13 +11,14 @@ Pocket Buddy keeps everyday chat on the phone with GGUF models through llama.cpp
 - FLUX.1-dev is an optional variant with non-commercial model-license terms. Review its license before using it.
 - These are downloadable model weights, not subscription APIs. The app does not require an external media account, balance or paid model catalog.
 - Wan 2.2 and FLUX.1 are large models. Typical Android phones are not suitable for running them locally. Pocket Buddy sends jobs to your own ComfyUI computer, which must have the weights, compatible nodes, sufficient compute and API-format workflows.
-- Optional `{{model}}` workflow text is replaced with the selected model identifier. A workflow can instead pin the installed checkpoint filename directly.
+- Optional `{{model}}` workflow text is replaced with the installed ComfyUI checkpoint filename configured in Pocket Buddy. A workflow can instead pin the loader filename directly. For image-to-video, add `{{input_image}}` to the Load Image filename input in the Wan workflow.
 
 Official references: [Wan 2.2](https://github.com/Wan-Video/Wan2.2) · [Wan TI2V-5B weights](https://huggingface.co/Wan-AI/Wan2.2-TI2V-5B) · [FLUX.1 source](https://github.com/black-forest-labs/flux) · [FLUX.1 Schnell weights and license](https://huggingface.co/black-forest-labs/FLUX.1-schnell) · [FLUX.1 Dev weights](https://huggingface.co/black-forest-labs/FLUX.1-dev)
 
 ## Chat and local inference
 
 - One-tap download and local GGUF chat.
+- Attach a photo or video in chat: Android makes a resized image or up to four video frames for visual analysis by a configured vision-capable API endpoint. Local GGUF chat remains text-only; attachments stay in app storage unless you choose to send them to an API provider.
 - Adaptive CPU/thread/context planning, hardware probing and thermal/memory-pressure awareness.
 - BigMoeOnEdge expert streaming for supported MoE models that exceed the phone's practical memory budget.
 - Colibrì is an architectural reference for hierarchical expert placement; it is not bundled into the Android app.
@@ -44,7 +45,7 @@ Workflows are user-supplied because ComfyUI node IDs, loader configuration, mode
 | Web search | Your configured SearXNG instance |
 | GitHub and MCP tools | The services you connect |
 
-Media prompts, workflow JSON and media files you submit to a workflow are sent to your configured ComfyUI endpoint. Use a server you control or trust. There is no Pocket Buddy-hosted media proxy or inference subscription.
+Media prompts, workflow JSON and media files you submit to a workflow are sent to your configured ComfyUI endpoint. Use a server you control or trust. A private Wi-Fi address such as `http://192.168.1.20:8188` is supported; public hosts must use HTTPS. Photo/video frames sent for visual analysis go only to your selected vision-capable chat API. There is no Pocket Buddy-hosted media proxy or inference subscription.
 
 ## Adaptive MoE inference
 

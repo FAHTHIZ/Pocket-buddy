@@ -1,7 +1,7 @@
 import React,{useCallback,useEffect,useRef,useState}from'react';
 import{Alert,Dimensions,Image,Linking,Pressable,ScrollView,StyleSheet,Text,View}from'react-native';
 import type{GenerationJob}from'../types';
-import{attachmentFromJob,cancelMediaJob,deleteLocalMedia,playAudioAttachment,playVideoAttachment,readMediaJobs,refreshMediaJob,stopAudioPlayback}from'../services/media';
+import{attachmentsFromJob,cacheMediaJobOutputs,cancelMediaJob,deleteLocalMedia,playAudioAttachment,playVideoAttachment,readMediaJobs,refreshMediaJob,stopAudioPlayback}from'../services/media';
 import{ImageViewer,saveWithFeedback,shareWithFeedback}from'../components/MediaViews';
 import type{MessageAttachment}from'../types';
 import{getComfyToken,loadConfig}from'../services/storage';
@@ -21,10 +21,13 @@ export default function MediaScreen({onBack}:Props){
    const [config,token]=await Promise.all([loadConfig(),getComfyToken()]);
    if(!mounted.current)return;
    setBase(config.comfyUrl.replace(/\/+$/,''));setComfyToken(token);
-   const active=items.filter(item=>!attachmentFromJob(item)&&(item.status==='queued'||item.status==='running'));
+   const active=items.filter(item=>!attachmentsFromJob(item).length&&(item.status==='queued'||item.status==='running'));
    if(active.length)await Promise.all(active.map(item=>refreshMediaJob(item.promptId).catch(()=>'')));
    const latest=await readMediaJobs();
-   if(mounted.current)setJobs(latest);
+   const completed=latest.filter(item=>item.status==='complete'&&item.outputs.length>0&&!attachmentsFromJob(item).length);
+   for(const job of completed)await cacheMediaJobOutputs(job).catch(()=>0);
+   const refreshed=completed.length?await readMediaJobs():latest;
+   if(mounted.current)setJobs(refreshed);
   }finally{reloadLock.current=false;}
  },[]);
  useEffect(()=>{
@@ -59,8 +62,8 @@ export default function MediaScreen({onBack}:Props){
   }
   Linking.openURL(url).catch(()=>Alert.alert('Could not open output','Check that your ComfyUI server is reachable.'));
  };
- const local=jobs.map(job=>({job,item:attachmentFromJob(job)})).filter((entry):entry is {job:GenerationJob;item:MessageAttachment}=>!!entry.item&&(filter==='all'||entry.job.kind===filter));
- const remote=jobs.filter(job=>!attachmentFromJob(job));
+ const local=jobs.flatMap(job=>attachmentsFromJob(job).map(item=>({job,item}))).filter(entry=>filter==='all'||entry.job.kind===filter);
+ const remote=jobs.filter(job=>!attachmentsFromJob(job).length);
  const images=local.filter(entry=>entry.job.kind==='image').map(entry=>entry.item);
  const tile=(Dimensions.get('window').width-30-12)/3;
  const remove=(job:GenerationJob)=>Alert.alert('Delete this file?','It will be removed from Pocket Buddy. Copies saved to your gallery stay.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await deleteLocalMedia(job).catch(()=>{});await reload();}}]);

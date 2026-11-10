@@ -8,38 +8,79 @@ function replacePrompt(value:any,prompt:string,model:string):any{
  if(value&&typeof value==='object'){const next:Record<string,unknown>={};for(const [key,child]of Object.entries(value))next[key]=replacePrompt(child,prompt,model);return next;}
  return value;
 }
+function isPrivateComfyHost(hostname:string):boolean{
+ const host=hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/,'');
+ if(host==='localhost'||host.endsWith('.local')||host.endsWith('.lan')||host.endsWith('.home.arpa'))return true;
+ if(host==='::1'||host.startsWith('fc')||host.startsWith('fd')||host.startsWith('fe80:'))return true;
+ const parts=host.split('.');
+ if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||Number(part)>255))return false;
+ const [a,b]=parts.map(Number);
+ return a===10||a===127||(a===172&&b>=16&&b<=31)||(a===192&&b===168)||(a===169&&b===254);
+}
+function comfyBaseUrl(raw:string):string{
+ let endpoint:URL;try{endpoint=new URL(raw.trim());}catch{throw new Error('Enter a ComfyUI URL, for example http://192.168.1.20:8188.');}
+ const localHttp=endpoint.protocol==='http:'&&isPrivateComfyHost(endpoint.hostname);
+ if((endpoint.protocol!=='https:'&&!localHttp)||!endpoint.hostname||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)
+  throw new Error('Use HTTPS for public servers. HTTP is supported only for private Wi-Fi/LAN ComfyUI hosts.');
+ return endpoint.toString().replace(/\/+$/,'');
+}
 async function request(path:string,init:RequestInit={}):Promise<any>{
  const config=await loadConfig();if(!config.comfyUrl.trim())throw new Error('Connect a ComfyUI server in Settings to use media generation.');
- let endpoint:URL;try{endpoint=new URL(config.comfyUrl.trim());}catch{throw new Error('Enter a valid ComfyUI HTTPS URL in Settings.');}
- if(endpoint.protocol!=='https:'||!endpoint.hostname||endpoint.username||endpoint.password||endpoint.search||endpoint.hash)throw new Error('ComfyUI endpoints must use HTTPS and must not contain embedded credentials, query strings or fragments.');
- const token=await getComfyToken(),headers:Record<string,string>={'Content-Type':'application/json',...(init.headers as Record<string,string>||{})};
+ const base=comfyBaseUrl(config.comfyUrl),token=await getComfyToken();
+ const headers:Record<string,string>={'Content-Type':'application/json',...(init.headers as Record<string,string>||{})};
  if(token)headers.Authorization='Bearer '+token;
- const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),60000);
+ const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),60000);
  try{
-  const response=await fetch(endpoint.toString().replace(/\/+$/,'')+path,{...init,headers,signal:controller.signal});
+  const response=await fetch(base+path,{...init,headers,signal:controller.signal});
   const raw=await response.text();
   if(!response.ok)throw new Error('ComfyUI returned HTTP '+response.status+': '+raw.slice(0,500));
   if(!raw.trim())return{};
   try{return JSON.parse(raw);}catch{throw new Error('ComfyUI returned an unsupported response.');}
- }catch(error){
-  if(controller.signal.aborted)throw new Error('The ComfyUI request timed out after 60 seconds.');
-  throw error;
- }finally{clearTimeout(timeout);}
+ }catch(error){if(controller.signal.aborted)throw new Error('The ComfyUI request timed out after 60 seconds.');throw error;}
+ finally{clearTimeout(timeout);}
 }
-async function submitOne(kind:MediaKind,prompt:string,model:string):Promise<string>{
+function replaceInput(value:any,inputImage:string):any{
+ if(typeof value==='string')return value.replaceAll('{{input_image}}',inputImage).replaceAll('__INPUT_IMAGE__',inputImage);
+ if(Array.isArray(value))return value.map(item=>replaceInput(item,inputImage));
+ if(value&&typeof value==='object'){const next:Record<string,unknown>={};for(const [key,child]of Object.entries(value))next[key]=replaceInput(child,inputImage);return next;}
+ return value;
+}
+async function uploadComfyImage(item:MessageAttachment):Promise<string>{
+ const config=await loadConfig(),base=comfyBaseUrl(config.comfyUrl),token=await getComfyToken();
+ const form=new FormData();
+ form.append('image',{uri:item.uri,name:item.name,type:item.mimeType} as any);
+ form.append('type','input');form.append('overwrite','true');
+ const headers:Record<string,string>={};if(token)headers.Authorization='Bearer '+token;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),120000);
+ try{
+  const response=await fetch(base+'/upload/image',{method:'POST',headers,body:form,signal:controller.signal});
+  const raw=await response.text();if(!response.ok)throw new Error('ComfyUI image upload returned HTTP '+response.status+': '+raw.slice(0,400));
+  let result:any;try{result=JSON.parse(raw);}catch{throw new Error('ComfyUI returned an invalid image upload response.');}
+  if(typeof result.name!=='string'||!result.name)throw new Error(result.error||'ComfyUI did not return the uploaded image filename.');
+  return [String(result.subfolder||'').replace(/^\/+|\/+$/g,''),result.name].filter(Boolean).join('/');
+ }catch(error){if(controller.signal.aborted)throw new Error('Uploading the source image to ComfyUI timed out.');throw error;}
+ finally{clearTimeout(timer);}
+}
+async function submitOne(kind:MediaKind,prompt:string,model:string,inputAttachment?:MessageAttachment):Promise<string>{
  const config=await loadConfig(),json=kind==='image'?config.imageWorkflow:kind==='video'?config.videoWorkflow:config.audioWorkflow;
  if(!json.trim())throw new Error('Add an API-format '+kind+' workflow in Settings. Put {{prompt}} in its positive prompt text input.');
  let workflow:any;try{workflow=JSON.parse(json);}catch{throw new Error('The saved ComfyUI workflow is not valid JSON.');}
- const result=await request('/prompt',{method:'POST',body:JSON.stringify({prompt:replacePrompt(workflow,prompt,model)})});
+ let inputImage='';
+ if(inputAttachment){
+  if(!inputAttachment.mimeType.toLowerCase().startsWith('image/'))throw new Error('Wan 2.2 image-to-video needs an image attachment.');
+  if(!json.includes('{{input_image}}')&&!json.includes('__INPUT_IMAGE__'))throw new Error('Add {{input_image}} to the Load Image filename in your Wan 2.2 workflow before attaching a source photo.');
+  inputImage=await uploadComfyImage(inputAttachment);
+ }else if(json.includes('{{input_image}}')||json.includes('__INPUT_IMAGE__'))throw new Error('Attach a source photo for this image-to-video workflow.');
+ if((json.includes('{{model}}')||json.includes('__MODEL__'))&&!model.trim())throw new Error('Enter the installed ComfyUI checkpoint filename in Settings; this workflow uses {{model}}.');
+ const result=await request('/prompt',{method:'POST',body:JSON.stringify({prompt:replaceInput(replacePrompt(workflow,prompt,model),inputImage)})});
  if(!result.prompt_id)throw new Error(result.error?.message||'ComfyUI did not return a prompt ID. Check the workflow API export.');
  return String(result.prompt_id);
 }
-export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1,model=''):Promise<GenerationJob[]>{
+export async function submitMediaJobs(kind:MediaKind,prompt:string,count=1,model='',inputAttachment?:MessageAttachment):Promise<GenerationJob[]>{
  const amount=Math.max(1,Math.min(20,Math.floor(count)||1)),jobs:GenerationJob[]=[];
  for(let index=0;index<amount;index++){
   const distinct=amount===1?prompt:prompt+'\nGenerate a distinct variation, variation '+(index+1)+' of '+amount+'.';
-  const promptId=await submitOne(kind,distinct,model);
+  const promptId=await submitOne(kind,distinct,model,inputAttachment);
   const createdAt=Date.now(),job:GenerationJob={id:kind+'-'+promptId,kind,prompt:distinct,promptId,status:'queued',createdAt,outputs:[]};
   await saveGenerationJob(job);jobs.push(job);
  }
@@ -88,9 +129,9 @@ export async function readMediaJobs():Promise<GenerationJob[]>{return listGenera
 
 export async function testMediaSetup():Promise<string[]>{
  const config=await loadConfig();
- if(!config.comfyUrl.trim())throw new Error('Enter your ComfyUI HTTPS server URL first.');
+ if(!config.comfyUrl.trim())throw new Error('Enter your ComfyUI server URL first.');
  const [stats,objectInfo]=await Promise.all([request('/system_stats'),request('/object_info')]);
- const report:string[]=['ComfyUI API: reachable'];
+ const report:string[]=['ComfyUI API: reachable',comfyBaseUrl(config.comfyUrl).startsWith('http://')?'Private LAN HTTP':'HTTPS'];
  const system=stats?.system||{};
  if(system.ram_total)report.push('Server RAM: '+Math.round(Number(system.ram_total)/1073741824*10)/10+' GB');
  for(const [kind,raw] of [['Image',config.imageWorkflow],['Video',config.videoWorkflow],['Audio',config.audioWorkflow]] as const){
@@ -152,13 +193,17 @@ export async function createMedia(request:MediaRequest,onProgress?:MediaProgress
  if(!config.comfyUrl.trim())throw new Error('Connect your own ComfyUI server in Settings, then add the FLUX.1 or Wan 2.2 API workflow.');
  const total=Math.max(1,Math.min(LIMITS[request.kind],Math.floor(request.count)||1));
  const style=request.kind==='audio'?(request.audioStyle||detectAudioStyle(prompt)):undefined;
- const model=request.model||(request.kind==='image'?config.imageModel:request.kind==='video'?config.videoModel:style==='speech'?config.speechModel:style==='sfx'?config.sfxModel:config.musicModel);
+ const selected=request.model||(request.kind==='image'?config.imageModel:request.kind==='video'?config.videoModel:style==='speech'?config.speechModel:style==='sfx'?config.sfxModel:config.musicModel);
+ const model=request.kind==='image'?(selected.toLowerCase().includes('dev')?config.imageDevCheckpoint:config.imageSchnellCheckpoint):request.kind==='video'?config.videoCheckpoint:'';
+ const inputAttachment=request.inputAttachments?.find(item=>(item.kind||'image')==='image');
+ if(request.inputAttachments?.length&&!inputAttachment)throw new Error('Choose an image attachment for image-to-video.');
  onProgress?.({items:[],done:0,total,status:'Queueing '+total+' '+request.kind+' job(s) on your ComfyUI server…'});
- const queued=await submitMediaJobs(request.kind,prompt,total,model);
+ const queued=await submitMediaJobs(request.kind,prompt,total,model,inputAttachment);
  onProgress?.({items:[],done:total,total,status:'Queued on your ComfyUI server'});
  return{attachments:[],failures:[],queued,engine:'comfyui'};
 }
-type NativeMediaControls={deleteMedia(path:string):Promise<boolean>;openMedia(path:string,mime:string):Promise<boolean>;shareMedia(path:string,mime:string):Promise<boolean>;saveToGallery(path:string,mime:string):Promise<string>;playAudio(path:string):Promise<string>;stopAudio():Promise<boolean>;playVideo(path:string,title:string):Promise<boolean>};
+type NativeFetchResult={type:'file';path:string;mimeType:string;size:number;thumbnail?:string}|{type:'text';status:number;body?:string};
+type NativeMediaControls={deleteMedia(path:string):Promise<boolean>;openMedia(path:string,mime:string):Promise<boolean>;shareMedia(path:string,mime:string):Promise<boolean>;saveToGallery(path:string,mime:string):Promise<string>;playAudio(path:string):Promise<string>;stopAudio():Promise<boolean>;playVideo(path:string,title:string):Promise<boolean>;pickChatAttachment():Promise<{path:string;name:string;mimeType:string;size:number;thumbnail?:string}|null>;getVisionFrames(path:string,mime:string):Promise<string[]>;fetchToFile(url:string,method:string,headers:Record<string,string>,body:string|null,extension:string,timeoutMs:number):Promise<NativeFetchResult>};
 const Controls=NativeModules.PocketBuddyMedia as NativeMediaControls|undefined;
 function controls():NativeMediaControls{if(!Controls?.openMedia)throw new Error('Media controls need the latest Pocket Buddy APK.');return Controls;}
 const filePath=(uri:string)=>uri.replace(/^file:\/\//,'');
@@ -175,12 +220,40 @@ export async function saveAttachment(item:MessageAttachment):Promise<string>{
  }
  return controls().saveToGallery(filePath(item.uri),item.mimeType);
 }
-export function attachmentFromJob(job:GenerationJob):MessageAttachment|null{
- for(const raw of job.outputs){try{const value=JSON.parse(raw);if(value&&typeof value.uri==='string'&&value.uri.startsWith('file://'))return value as MessageAttachment;}catch{}}
- return null;
+export function attachmentsFromJob(job:GenerationJob):MessageAttachment[]{
+ const items:MessageAttachment[]=[];for(const raw of job.outputs){try{const value=JSON.parse(raw);if(value&&typeof value.uri==='string'&&value.uri.startsWith('file://'))items.push(value as MessageAttachment);}catch{}}
+ return items;
 }
+export function attachmentFromJob(job:GenerationJob):MessageAttachment|null{return attachmentsFromJob(job)[0]||null;}
 export async function deleteLocalMedia(job:GenerationJob):Promise<void>{
- const item=attachmentFromJob(job);
- if(item&&Controls?.deleteMedia)await Controls.deleteMedia(filePath(item.uri)).catch(()=>false);
+ for(const item of attachmentsFromJob(job))if(Controls?.deleteMedia)await Controls.deleteMedia(filePath(item.uri)).catch(()=>false);
  await deleteGenerationJob(job.id);
+}
+
+export async function pickChatAttachment():Promise<MessageAttachment|null>{
+ const result=await controls().pickChatAttachment();if(!result)return null;
+ const kind=result.mimeType.startsWith('video/')?'video':'image';
+ return{id:'attachment-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,7),name:result.name,uri:'file://'+result.path,mimeType:result.mimeType,size:result.size,kind,thumbnail:result.thumbnail?'file://'+result.thumbnail:undefined};
+}
+export async function getVisionFrames(item:MessageAttachment):Promise<string[]>{
+ if(!item.uri.startsWith('file://'))throw new Error('This attachment is not stored in Pocket Buddy app storage.');
+ if(!['image','video'].includes(item.kind||'image'))return [];
+ return controls().getVisionFrames(filePath(item.uri),item.mimeType);
+}
+export async function cacheMediaJobOutputs(job:GenerationJob):Promise<number>{
+ if(!job.outputs.length||attachmentsFromJob(job).length)return attachmentsFromJob(job).length;
+ const config=await loadConfig(),base=comfyBaseUrl(config.comfyUrl),token=await getComfyToken(),saved:MessageAttachment[]=[];
+ for(const raw of job.outputs){
+  let descriptor:any;try{descriptor=JSON.parse(raw);}catch{continue;}
+  if(!descriptor||typeof descriptor.filename!=='string')continue;
+  const query='filename='+encodeURIComponent(descriptor.filename)+'&subfolder='+encodeURIComponent(String(descriptor.subfolder||''))+'&type='+encodeURIComponent(String(descriptor.type||'output'));
+  const headers:Record<string,string>={Accept:'image/*,video/*,audio/*,application/octet-stream'};if(token)headers.Authorization='Bearer '+token;
+  const extension=String(descriptor.filename).split('.').pop()||'bin';
+  const file=await controls().fetchToFile(base+'/view?'+query,'GET',headers,null,extension,900000);
+  if(file.type!=='file')throw new Error('ComfyUI could not download '+descriptor.filename+': '+String(file.body||'Unexpected response').slice(0,180));
+  const mime=file.mimeType||(job.kind==='image'?'image/jpeg':job.kind==='video'?'video/mp4':'audio/mpeg');
+  saved.push({id:'media-'+job.promptId+'-'+saved.length,name:String(descriptor.filename),uri:'file://'+file.path,mimeType:mime,size:file.size,kind:job.kind,thumbnail:file.thumbnail?'file://'+file.thumbnail:undefined,prompt:job.prompt});
+ }
+ if(saved.length)await updateGenerationJob(job.promptId,job.status,saved.map(item=>JSON.stringify(item)));
+ return saved.length;
 }
