@@ -4,12 +4,12 @@ import{SafeAreaProvider,SafeAreaView}from'react-native-safe-area-context';
 import AsyncStorage from'@react-native-async-storage/async-storage';
 import ChatScreen from'./screens/ChatScreen';
 import ConnectorsScreen from'./screens/ConnectorsScreen';
-import ModelsScreen,{DEFAULT_PICK_ID,type CloudChoice}from'./screens/ModelsScreen';
+import ModelsScreen,{DEFAULT_PICK_ID}from'./screens/ModelsScreen';
 import SettingsScreen from'./screens/SettingsScreen';
 import MediaScreen from'./screens/MediaScreen';
 import{runAgent,type ConfirmTool}from'./services/agent';
 import{listConversations,saveConversation}from'./services/database';
-import{getPollinationsKey,getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/storage';
+import{getProviderKey,loadConfig,saveConfig,saveProviderKey}from'./services/storage';
 import{discoverAndTestProvider}from'./services/providerSetup';
 import{loadLocalModel,releaseLocalModel}from'./services/llm';
 import{readAloud,stopSpeech}from'./services/speech';
@@ -24,7 +24,7 @@ function BuddyApp(){
  const[conversations,setConversations]=useState<Conversation[]>([]),[activeId,setActiveId]=useState('');
  const[config,setConfig]=useState<AppConfig|null>(null),[modelName,setModelName]=useState('Choose a model');
  const[messages,setMessages]=useState<ChatMessage[]>([]),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
- const[liveAttachments,setLiveAttachments]=useState<MessageAttachment[]>([]),[mediaProgress,setMediaProgress]=useState<{done:number;total:number}|null>(null),[autoStart,setAutoStart]=useState(''),[pollConnected,setPollConnected]=useState(false);
+ const[liveAttachments,setLiveAttachments]=useState<MessageAttachment[]>([]),[mediaProgress,setMediaProgress]=useState<{done:number;total:number}|null>(null),[autoStart,setAutoStart]=useState(''),[mediaServerConfigured,setMediaServerConfigured]=useState(false);
  const[liveText,setLiveText]=useState(''),[toolsEnabled,setToolsEnabled]=useState(true),[bootError,setBootError]=useState(''),[ready,setReady]=useState(false),[speechActive,setSpeechActive]=useState(false),[setupComplete,setSetupComplete]=useState(false),[restoringModel,setRestoringModel]=useState(false);
 
  useEffect(()=>{
@@ -87,8 +87,8 @@ function BuddyApp(){
   });
   return()=>{mounted=false;};
  },[ready]);
- const refreshPollinations=()=>{getPollinationsKey().then(key=>setPollConnected(!!key)).catch(()=>setPollConnected(false));};
- useEffect(()=>{refreshPollinations();},[screen]);
+ const refreshMediaServer=()=>{loadConfig().then(value=>setMediaServerConfigured(!!value.comfyUrl.trim())).catch(()=>setMediaServerConfigured(false));};
+ useEffect(()=>{refreshMediaServer();},[screen]);
  useEffect(()=>{
   const sub=BackHandler.addEventListener('hardwareBackPress',()=>{
    if(menuOpen){setMenuOpen(false);return true;}
@@ -141,15 +141,6 @@ function BuddyApp(){
   const next=[...messages,user],id=activeId||'chat-'+Date.now().toString(36);
   const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
   await runTurn(id,next,title,mediaRequest);
- };
- const connectCloud=async(choice:CloudChoice)=>{
-  const key=choice.needsKey?await getPollinationsKey():'';
-  const current=config||await loadConfig();
-  const next={...current,mode:'api' as const,baseUrl:choice.baseUrl,model:choice.model};
-  await saveProviderKey(key);await saveConfig(next);
-  await AsyncStorage.setItem('pocket-buddy.setup-complete','true');
-  await releaseLocalModel();
-  setConfig(next);setModelName(choice.model==='openai'?'Cloud chat (free)':choice.model);setSetupComplete(true);setBootError('');setScreen('chat');
  };
  const editAndSend=async(messageId:string,text:string)=>{
   if(busy)return;
@@ -228,9 +219,9 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} liveAttachments={liveAttachments} mediaProgress={mediaProgress} pollinationsConnected={pollConnected} onGetDefaultModel={()=>{if(busy)return;setAutoStart(DEFAULT_PICK_ID);setScreen('models');}} onCloudChat={()=>connectCloud({label:'Cloud chat (free)',baseUrl:'https://text.pollinations.ai/openai',model:'openai',needsKey:false}).catch(error=>setBootError(String(error)))} onOpenSettings={()=>{if(!busy)setScreen('settings');}} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} liveAttachments={liveAttachments} mediaProgress={mediaProgress} mediaServerConfigured={mediaServerConfigured} onGetDefaultModel={()=>{if(busy)return;setAutoStart(DEFAULT_PICK_ID);setScreen('models');}} onOpenSettings={()=>{if(!busy)setScreen('settings');}} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
-  {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded} autoStart={autoStart} onAutoStartHandled={()=>setAutoStart('')} onCloud={connectCloud}/>}
+  {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded} autoStart={autoStart} onAutoStartHandled={()=>setAutoStart('')}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
   {screen==='media'&&<MediaScreen onBack={()=>setScreen('chat')}/>}
   <Modal visible={menuOpen} transparent animationType="fade" onRequestClose={()=>setMenuOpen(false)}>
@@ -247,7 +238,7 @@ function BuddyApp(){
      <ScrollView style={{flex:1}}>
       {conversations.map(item=><Pressable key={item.id} onPress={()=>chooseChat(item)} onLongPress={()=>deleteChat(item)} style={[s.chatLink,item.id===activeId&&s.chatLinkActive]}><Text style={s.chatLinkText} numberOfLines={1}>{item.title}</Text></Pressable>)}
      </ScrollView>
-     <View style={s.footer}><Text style={s.footerTitle}>{pollConnected?'Media: Pollinations connected':'Media: free images'}</Text><Text style={s.footerText}>{pollConnected?'Images, video, music and speech are ready.':'Connect Pollinations in Settings for faster images, video and music.'}</Text></View>
+     <View style={s.footer}><Text style={s.footerTitle}>{mediaServerConfigured?'Media: your ComfyUI host is configured':'Media: configure your own host'}</Text><Text style={s.footerText}>{mediaServerConfigured?'FLUX.1 and Wan 2.2 workflows will run on your computer.':'Connect a ComfyUI host and add the FLUX.1 and Wan 2.2 workflows in Settings.'}</Text></View>
     </View>
    </View>
   </Modal>

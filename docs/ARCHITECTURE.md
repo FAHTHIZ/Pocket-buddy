@@ -4,7 +4,7 @@
 
 Pocket Buddy is a mobile-first personal AI workspace. The default surface is a single familiar chat session. Model management, connector setup and media jobs are dedicated secondary screens, not required steps for normal chat.
 
-The client does not operate a hosted inference backend. Chat runs on-device (default: Qwen3.8 2B Uncensored GGUF) or on a provider the user picks. Media is created by the built-in Pollinations engine (default) or a user-operated ComfyUI server.
+The client does not operate a hosted inference backend. Chat runs on-device (GGUF through llama.cpp) or on a provider the user picks. Media generation is routed only to a ComfyUI server the user operates. FLUX.1 Schnell is the default image target and Wan 2.2 TI2V-5B is the video target; weights run on the ComfyUI computer, not inside the Android APK.
 
 ## Layers
 
@@ -13,7 +13,7 @@ The client does not operate a hosted inference backend. Chat runs on-device (def
 3. Agent runtime: normalized tool schemas, bounded function-call loop, confirmation policy and direct media intent router.
 4. Capability registry: built-in deterministic tools plus user-connected MCP tools.
 5. Model adapters: llama.cpp via llama.rn or OpenAI-compatible chat completion endpoints.
-6. Media adapters: `services/pollinations.ts` (device-flow sign-in, live model catalog, image/video/audio generation, async job polling) and `services/media.ts` (`createMedia` batch orchestrator with parallel workers and live progress; ComfyUI queue as the advanced engine). Native `PocketBuddyMedia` module streams results to app-private files, makes video thumbnails, plays audio/video, shares through a FileProvider and saves to MediaStore.
+6. Media adapter: `services/media.ts` submits user-supplied API-format workflows to ComfyUI, substitutes `{{prompt}}` and `{{model}}`, and tracks queue/history state. A static catalog exposes FLUX.1 Schnell/Dev and Wan 2.2 targets. Native `PocketBuddyMedia` manages app-private files, playback, sharing and gallery saves.
 7. Platform services: Android DownloadManager, hardware profile, thermal status, SQLite and secure credential store.
 
 ## Capability independence
@@ -23,9 +23,9 @@ The selected language model is not the capability host. Pocket Buddy registers i
 | Intent | Dispatcher |
 |---|---|
 | Text conversation | Selected LLM adapter |
-| Explicit image request ("create 4 images of…" or ＋ → Create images) | Intent router / composer mode → `createMedia` → Pollinations (or ComfyUI) |
-| Explicit video request | Intent router / composer mode → `createMedia` → Pollinations async video job |
-| Explicit audio request (music / speech / sfx) | Intent router / composer mode → `createMedia` → Pollinations audio |
+| Explicit image request ("create 4 images of…" or ＋ → Create images) | Intent router / composer mode → `createMedia` → user's ComfyUI FLUX.1 workflow |
+| Explicit video request | Intent router / composer mode → `createMedia` → user's ComfyUI Wan 2.2 workflow |
+| Explicit audio request (music / speech / sfx) | Intent router / composer mode → `createMedia` → optional ComfyUI audio workflow |
 | Model-requested media operation | LLM tool call → media adapter |
 | Web search | Configured SearXNG |
 | Webpage reading | HTTPS reader |
@@ -83,7 +83,7 @@ The first search adapter uses the SearXNG JSON Search API. Users supply the endp
 
 ## Media
 
-ComfyUI is a separately operated server. Pocket Buddy imports an API-format workflow, substitutes {{prompt}}, submits it to /prompt, stores the returned ID in SQLite and checks /history/{prompt_id}. A workflow is selected separately for image and video generation.
+ComfyUI is a separately operated server. Pocket Buddy imports API-format workflows, substitutes `{{prompt}}` and optional `{{model}}`, submits them to `/prompt`, stores the returned ID in SQLite and checks `/history/{prompt_id}`. Separate workflows are configured for FLUX.1 image generation and Wan 2.2 video generation.
 
 The current adapter covers job submission, status and cancellation. A release-grade media manager still needs WebSocket progress events, local output downloads, reliable interrupted-job recovery and richer media previews.
 
@@ -110,15 +110,16 @@ Large transfers use Android DownloadManager so they can survive Activity recreat
 - Offline ASR: whisper.cpp or sherpa-onnx.
 - Offline TTS: sherpa-onnx / ONNX Runtime.
 - Alternative LLM runtimes: MLC-LLM and ExecuTorch.
-- Additional media backends: provider adapters behind the same job interface.
+
+FLUX.1 Schnell and Wan 2.2 TI2V-5B are model weights, not hosted APIs. The mobile client sends jobs to the user's ComfyUI installation, which must have matching weights, custom nodes and API workflows. FLUX.1-dev is optional and carries non-commercial terms. Colibrì is an architectural reference, not a bundled runtime; BigMoeOnEdge remains the Android MoE implementation.
 
 ## Media pipeline
 
 - `MediaRequest {kind, prompt, count, model, shape, audioStyle, duration, voice}` comes from the composer chip, the direct intent router (`detectDirectMediaRequest`, which also strips phrases like "create 4 images of") or an LLM tool call.
-- `createMedia` resolves defaults from settings, runs up to 4 parallel workers for images when a Pollinations key is connected (sequential with countdown on the keyless endpoint) and 2 for video/audio, and emits `{type:'media', items, done, total}` events so the chat shows a grid that fills in live.
+- `createMedia` resolves the selected FLUX.1 / Wan 2.2 model and submits a user-supplied ComfyUI API workflow. Jobs are queued and tracked in the Media library.
 - Each result becomes a `MessageAttachment` (file URI, MIME, thumbnail, prompt, model) stored on the assistant message and as a completed `generation_jobs` row, which powers the Media library.
 - Video uses `Prefer: respond-async` and polls `/v1/jobs/{id}` until `succeeded`, then downloads the result.
-- Pollinations sign-in uses the OAuth-style device flow (`/api/device/code` → browser approval → `/api/device/token`). Keys live in the Android Keystore.
+- No third-party media account, balance or hosted inference API is used. The ComfyUI bearer token, when supplied, is stored in Android Keystore.
 
 ## Local inference details
 

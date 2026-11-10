@@ -2,7 +2,7 @@ import React,{useEffect,useState}from'react';
 import{ActivityIndicator,Alert,Dimensions,FlatList,Image,Modal,Pressable,ScrollView,StyleSheet,Text,View}from'react-native';
 import type{AudioStyle,ImageShape,MediaKind,MediaRequest,MessageAttachment}from'../types';
 import{openAttachment,playAudioAttachment,playVideoAttachment,saveAttachment,shareAttachment,stopAudioPlayback}from'../services/media';
-import{fallbackModels,listMediaModels,POLLINATIONS_VOICES,type MediaModel}from'../services/pollinations';
+import{fallbackModels,listMediaModels,MEDIA_VOICES,type MediaModel}from'../services/mediaModels';
 
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 let activeAudio='';const audioListeners=new Set<(id:string)=>void>();
@@ -119,12 +119,12 @@ export function CreateOptions({mode,models,onChange,onClose,connected,onConnect}
     </View>
     {mode.kind!=='audio'?<><Text style={s.label}>Shape</Text><View style={s.chips}>{(mode.kind==='video'?['landscape','portrait']:['square','portrait','landscape'] as ImageShape[]).map(shape=><Chip key={shape} label={shape==='square'?'Square':shape==='portrait'?'Portrait 9:16':'Landscape 16:9'} active={mode.shape===shape} onPress={()=>onChange({...mode,shape:shape as ImageShape})}/>)}</View></>:null}
     {durations.length?<><Text style={s.label}>Length</Text><View style={s.chips}>{durations.map(value=><Chip key={value} label={value?value+' s':'Auto'} active={mode.duration===value} onPress={()=>onChange({...mode,duration:value})}/>)}</View></>:null}
-    {mode.kind==='audio'&&mode.audioStyle==='speech'?<><Text style={s.label}>Voice</Text><View style={s.chips}>{POLLINATIONS_VOICES.map(voice=><Chip key={voice} label={voice} active={mode.voice===voice} onPress={()=>onChange({...mode,voice})}/>)}</View></>:null}
+    {mode.kind==='audio'&&mode.audioStyle==='speech'?<><Text style={s.label}>Voice</Text><View style={s.chips}>{MEDIA_VOICES.map(voice=><Chip key={voice} label={voice} active={mode.voice===voice} onPress={()=>onChange({...mode,voice})}/>)}</View></>:null}
     <Text style={s.label}>Model</Text>
-    {!connected&&mode.kind!=='image'?<Pressable onPress={onConnect} style={s.notice}><Text style={s.noticeText}>Video, music and sound effects need a Pollinations account (free sign-up, pay-as-you-go). Tap to connect in Settings.</Text></Pressable>:null}
+    {!connected?<Pressable onPress={onConnect} style={s.notice}><Text style={s.noticeText}>Connect your own ComfyUI server in Settings and add the matching workflow. Generation runs on that computer, not on this phone.</Text></Pressable>:null}
     {list.map(item=><Pressable key={item.id} onPress={()=>onChange({...mode,model:item.id,duration:item.kind==='video'&&item.durations?.length&&!item.durations.includes(mode.duration)?item.durations[0]:mode.duration})} style={[s.modelRow,mode.model===item.id&&s.modelRowActive]}>
      <View style={{flex:1}}><Text style={s.modelName}>{item.title}</Text><Text style={s.modelDesc} numberOfLines={2}>{item.description||item.id}</Text></View>
-     <View style={[s.badge,item.paid?s.badgePaid:s.badgeFree]}><Text style={s.badgeText}>{item.paid?'Paid':'Free'}</Text></View>
+     <View style={s.badge}><Text style={s.badgeText}>{item.licenseLabel}</Text></View>
     </Pressable>)}
     {!list.length?<Text style={s.modelDesc}>No models available for this type right now.</Text>:null}
    </ScrollView>

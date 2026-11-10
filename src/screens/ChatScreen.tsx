@@ -8,7 +8,7 @@ import{loadConfig}from'../services/storage';
 
 const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa',blue:'#9fc0ff'};
 type Props={
- messages:ChatMessage[];onSend:(text:string,media?:MediaRequest)=>void;liveAttachments:MessageAttachment[];mediaProgress:{done:number;total:number}|null;pollinationsConnected:boolean;onGetDefaultModel:()=>void;onCloudChat:()=>void;onOpenSettings:()=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
+ messages:ChatMessage[];onSend:(text:string,media?:MediaRequest)=>void;liveAttachments:MessageAttachment[];mediaProgress:{done:number;total:number}|null;mediaServerConfigured:boolean;onGetDefaultModel:()=>void;onOpenSettings:()=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
@@ -32,7 +32,7 @@ export default function ChatScreen(p:Props){
   const value=draft.trim();if(!value||p.busy||p.modelStarting)return;
   if(createMode&&!editingId){setDraft('');p.onSend(value,modeToRequest(createMode,value));return;}
   if(p.needsSetup&&!detectDirectMediaRequest(value)){
-   Alert.alert('Pick a chat model first','Images work right away (try “create 4 images of …” or tap ＋ → Create image). For chatting, get the default Qwen3.8 2B Uncensored model or use free cloud chat.',[{text:'Not now',style:'cancel'},{text:'Cloud chat',onPress:p.onCloudChat},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
+   Alert.alert('Pick a chat model first','Download the local chat model or connect your own OpenAI-compatible provider.',[{text:'Not now',style:'cancel'},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
    return;
   }
   const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);
@@ -69,7 +69,6 @@ export default function ChatScreen(p:Props){
      <Text style={s.setupTitle}>Get Qwen3.8 2B Uncensored</Text>
      <Text style={s.setupCopy}>The default Pocket Buddy brain (~1.3 GB). It downloads once, loads automatically and then runs offline on your phone.</Text>
      <Pressable style={s.connectButton} onPress={p.onGetDefaultModel}><Text style={s.connectButtonText}>Download & start chatting  →</Text></Pressable>
-     <Pressable style={s.localButton} onPress={p.onCloudChat}><Text style={s.localButtonText}>Chat in the cloud now (no download)</Text></Pressable>
      <Pressable style={s.localButton} onPress={()=>p.onQuickAction('models')}><Text style={s.localButtonText}>Choose another model</Text></Pressable>
      <Pressable style={s.localButton} onPress={()=>setShowProviderSetup(value=>!value)} disabled={connecting}>
       <Text style={s.localButtonText}>{showProviderSetup?'Hide API provider setup':'Use my own API provider'}</Text>
@@ -87,8 +86,8 @@ export default function ChatScreen(p:Props){
        {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
       </Pressable>
      </View>:null}
-     <View style={s.mediaReady}><Text style={s.mediaReadyTitle}>Media works right now</Text><Text style={s.setupCopy}>Tap ＋ below → Create image, or type “create 4 images of a neon city”. {p.pollinationsConnected?'Pollinations is connected, so video and music are ready too.':'Connect Pollinations in Settings for video, music and faster images.'}</Text>
-      {!p.pollinationsConnected?<Pressable style={s.localButton} onPress={p.onOpenSettings}><Text style={s.localButtonText}>Connect Pollinations for video & music</Text></Pressable>:null}</View>
+     <View style={s.mediaReady}><Text style={s.mediaReadyTitle}>Media works right now</Text><Text style={s.setupCopy}>Tap ＋ → Create image or Create video. Configure your ComfyUI server and FLUX.1 / Wan 2.2 workflows in Settings. Your computer performs generation.</Text>
+      {!p.mediaServerConfigured?<Pressable style={s.localButton} onPress={p.onOpenSettings}><Text style={s.localButtonText}>Configure my media server</Text></Pressable>:null}</View>
      <Text style={s.setupPrivacy}>Local models and chats stay on this phone. Media prompts are sent to the media service you choose.</Text>
     </View>:<View style={s.suggestions}>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Explain a complex topic in simple terms')}><Text style={s.suggestionText}>Explain a complex topic</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
@@ -133,13 +132,13 @@ export default function ChatScreen(p:Props){
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
   </View>
-  {optionsOpen&&createMode?<CreateOptions mode={createMode} models={models} connected={p.pollinationsConnected} onChange={setCreateMode} onClose={()=>setOptionsOpen(false)} onConnect={()=>{setOptionsOpen(false);p.onOpenSettings();}}/>:null}
+  {optionsOpen&&createMode?<CreateOptions mode={createMode} models={models} connected={p.mediaServerConfigured} onChange={setCreateMode} onClose={()=>setOptionsOpen(false)} onConnect={()=>{setOptionsOpen(false);p.onOpenSettings();}}/>:null}
   <Modal visible={actions} transparent animationType="fade" onRequestClose={()=>setActions(false)}>
    <Pressable style={s.modalShade} onPress={()=>setActions(false)}>
     <View style={s.actionSheet}>
      <Text style={s.sheetTitle}>Add to your session</Text>
-     <Action label="Create images" detail="1–20 images at once · free" icon="▧" onPress={()=>quick('image')}/>
-     <Action label="Create video" detail={p.pollinationsConnected?'Short clips with Wan, Veo, Seedance…':'Needs Pollinations connected'} icon="▶" onPress={()=>quick('video')}/>
+     <Action label="Create images" detail="FLUX.1 · 1–20 images via your host" icon="▧" onPress={()=>quick('image')}/>
+     <Action label="Create video" detail={p.mediaServerConfigured?'Wan 2.2 on your ComfyUI host':'Configure your ComfyUI host'} icon="▶" onPress={()=>quick('video')}/>
      <Action label="Create audio" detail="Music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
      <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')} disabled={p.busy}/>
      <Action label="Connectors" detail="GitHub, MCP and external tools" icon="⌘" onPress={()=>quick('connectors')}/>

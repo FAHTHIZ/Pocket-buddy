@@ -14,12 +14,10 @@ export const QUICK_PICKS:QuickPick[]=[
  {id:'qwen3-0.6b',name:'Qwen3 0.6B Lite',repo:'unsloth/Qwen3-0.6B-GGUF',fileName:'Qwen3-0.6B-Q4_K_M.gguf',sizeLabel:'~397 MB',description:'A tiny fallback for older or low-memory phones. Good for short questions; less capable than the default.',fitLabel:'Lightweight',minRamMb:0},
 ];
 export const DEFAULT_PICK_ID='qwen3.8-2b-uncensored';
-export type CloudChoice={label:string;baseUrl:string;model:string;needsKey:boolean};
-type Props={onBack:()=>void;onOpenSettings:()=>void;onLoaded:(name:string,uri:string)=>void;autoStart?:string;onAutoStartHandled?:()=>void;onCloud:(choice:CloudChoice)=>Promise<void>};
+type Props={onBack:()=>void;onOpenSettings:()=>void;onLoaded:(name:string,uri:string)=>void;autoStart?:string;onAutoStartHandled?:()=>void};
 function bytesLabel(value?:number):string{return value?(value/1024/1024/1024).toFixed(2)+' GB':'Size unknown';}
-export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,onAutoStartHandled,onCloud}:Props){
+export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,onAutoStartHandled}:Props){
  const[libraryReady,setLibraryReady]=useState(false);
- const[cloudModels,setCloudModels]=useState<CloudChoice[]>([]),[cloudBusy,setCloudBusy]=useState('');
  const[query,setQuery]=useState(''),[models,setModels]=useState<HubModel[]>([]),[files,setFiles]=useState<Record<string,HubFile[]>>({});
  const[selected,setSelected]=useState(''),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[device,setDevice]=useState<DeviceProfile|null>(null),[downloading,setDownloading]=useState('');
  const[installed,setInstalled]=useState<LocalModelRecord[]>([]),[activePath,setActivePath]=useState(''),[runtimeStatus,setRuntimeStatus]=useState(''),[benchmark,setBenchmark]=useState<LocalBenchmark|null>(null),[benchmarkBusy,setBenchmarkBusy]=useState(false),[pendingDownloads,setPendingDownloads]=useState<PendingModelDownloadState[]>([]),[quickLoading,setQuickLoading]=useState(''),[cancellingDownload,setCancellingDownload]=useState('');
@@ -95,13 +93,6 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
   },700);
   return()=>clearTimeout(timer);
  },[autoStart,autoHandled,installed,pendingDownloads,busy,quickLoading,libraryReady]);
- useEffect(()=>{
-  fetch('https://gen.pollinations.ai/text/models').then(r=>r.ok?r.json():[]).then((items:any[])=>{
-   const list:CloudChoice[]=(Array.isArray(items)?items:[]).filter(item=>item&&typeof item.name==='string'&&(!item.output_modalities||item.output_modalities.includes('text'))).sort((a,b)=>Number(!!a.paid_only)-Number(!!b.paid_only)||Number(!String(b.name).includes('qwen'))-Number(!String(a.name).includes('qwen'))).slice(0,40).map(item=>({label:(item.paid_only?'Paid · ':'Free · ')+String(item.description||item.name).slice(0,60),baseUrl:'https://gen.pollinations.ai/v1',model:String(item.name),needsKey:true}));
-   setCloudModels(list);
-  }).catch(()=>{});
- },[]);
- const useCloud=async(choice:CloudChoice)=>{if(cloudBusy)return;try{setCloudBusy(choice.model);await onCloud(choice);}catch(error){Alert.alert('Could not switch to cloud chat',error instanceof Error?error.message:String(error));}finally{setCloudBusy('');}};
  const renderFile=(model:HubModel,file:HubFile)=>{
   const modelMb=file.size?file.size/1048576:0;
   const estimatedMb=modelMb*1.18+384;
@@ -146,15 +137,6 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
     })}
     {!recommendedPicks.length?<Text style={s.quickSubtitle}>Reading your phone's memory profile…</Text>:null}
     {device?.totalRamMb?<Text style={s.quickFootnote}>Larger models are hidden on phones with less memory. Speed depends on your chip, free memory and context size.</Text>:null}
-   </View>
-   <View style={s.quickSection}>
-    <View style={s.quickHeading}><View style={{flex:1}}><Text style={s.quickTitle}>Cloud chat · no download</Text><Text style={s.quickSubtitle}>Runs on Pollinations servers. Start chatting instantly; your messages leave the phone.</Text></View><Text style={s.quickSpark}>☁</Text></View>
-    <View style={s.quickCard}>
-     <View style={s.quickCardTop}><View style={{flex:1}}><Text style={s.quickName}>Pollinations free chat</Text><Text style={s.quickMeta}>GPT-OSS 20B · free · no account</Text></View><View style={s.quickTag}><Text style={s.quickTagText}>Instant</Text></View></View>
-     <View style={s.quickCardBottom}><Text style={s.quickOffline}>Needs internet</Text><Pressable disabled={!!cloudBusy} style={[s.quickButton,!!cloudBusy&&s.quickButtonDisabled]} onPress={()=>useCloud({label:'Cloud chat (free)',baseUrl:'https://text.pollinations.ai/openai',model:'openai',needsKey:false})}><Text style={s.quickButtonText}>{cloudBusy==='openai'?'Connecting…':'Use cloud chat'}</Text></Pressable></View>
-    </View>
-    {cloudModels.length?<Text style={[s.quickSubtitle,{marginTop:10}]}>More cloud models (needs Pollinations connected in Settings):</Text>:null}
-    {cloudModels.map(item=><Pressable key={item.model} disabled={!!cloudBusy} onPress={()=>useCloud(item)} style={s.cloudRow}><Text style={s.cloudName} numberOfLines={1}>{item.model}</Text><Text style={s.cloudLabel} numberOfLines={1}>{cloudBusy===item.model?'Connecting…':item.label}</Text></Pressable>)}
    </View>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
     {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}{arch[item.path]?' · '+(arch[item.path]!.isMoe?`MoE ${arch[item.path]!.expertUsedCount}/${arch[item.path]!.expertCount}`:'Dense'):''}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>

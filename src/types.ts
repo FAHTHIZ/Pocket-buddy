@@ -1,5 +1,5 @@
 export type ProviderMode='api'|'local';
-export type MediaEngine='pollinations'|'comfyui';
+export type MediaEngine='comfyui';
 export type ImageShape='square'|'portrait'|'landscape';
 export type AudioStyle='music'|'speech'|'sfx';
 export type MediaKind='image'|'video'|'audio';
