@@ -66,14 +66,14 @@ export default function MediaScreen({onBack}:Props){
  const remote=jobs.filter(job=>!attachmentsFromJob(job).length);
  const images=local.filter(entry=>entry.job.kind==='image').map(entry=>entry.item);
  const tile=(Dimensions.get('window').width-30-12)/3;
- const remove=(job:GenerationJob)=>Alert.alert('Delete this file?','It will be removed from Pocket Buddy. Copies saved to your gallery stay.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await deleteLocalMedia(job).catch(()=>{});await reload();}}]);
+ const remove=(job:GenerationJob,item:MessageAttachment)=>Alert.alert('Delete this file?','It will be removed from Pocket Buddy. Other files from the same batch will stay. Copies saved to your gallery stay.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{await deleteLocalMedia(job,item).catch(()=>{});await reload();}}]);
  const open=(job:GenerationJob,item:MessageAttachment)=>{
   if(job.kind==='image'){setViewer(images.findIndex(image=>image.id===item.id));return;}
   if(job.kind==='video'){playVideoAttachment(item).catch(error=>Alert.alert('Could not play',String(error)));return;}
   if(playing===item.id){stopAudioPlayback().catch(()=>{});setPlaying('');return;}
   setPlaying(item.id);playAudioAttachment(item).catch(error=>Alert.alert('Could not play',String(error))).finally(()=>setPlaying(old=>old===item.id?'':old));
  };
- const actions=(job:GenerationJob,item:MessageAttachment)=>Alert.alert(job.kind==='image'?'Image':job.kind==='video'?'Video':'Audio',job.prompt.slice(0,300),[{text:'Save to gallery',onPress:()=>saveWithFeedback(item)},{text:'Share',onPress:()=>shareWithFeedback(item)},{text:'Delete',style:'destructive',onPress:()=>remove(job)},{text:'Close',style:'cancel'}]);
+ const actions=(job:GenerationJob,item:MessageAttachment)=>Alert.alert(job.kind==='image'?'Image':job.kind==='video'?'Video':'Audio',job.prompt.slice(0,300),[{text:'Save to gallery',onPress:()=>saveWithFeedback(item)},{text:'Share',onPress:()=>shareWithFeedback(item)},{text:'Delete',style:'destructive',onPress:()=>remove(job,item)},{text:'Close',style:'cancel'}]);
  return <View style={s.root}>
   <View style={s.header}><Pressable style={s.back} onPress={onBack}><Text style={s.backText}>‹</Text></Pressable><Text style={s.title}>Media library</Text><Pressable onPress={()=>reload()}><Text style={s.refresh}>Refresh</Text></Pressable></View>
   <ScrollView contentContainerStyle={s.content}>

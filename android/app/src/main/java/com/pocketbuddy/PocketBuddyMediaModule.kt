@@ -83,7 +83,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
         val retriever = MediaMetadataRetriever()
         return try {
             retriever.setDataSource(video.absolutePath)
-            val frame = retriever.getFrameAtTime(400000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: retriever.frameAtTime ?: return null
+            val frame = (if (Build.VERSION.SDK_INT >= 27) retriever.getScaledFrameAtTime(400000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 512, 512) ?: retriever.getFrameAtTime(400000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) else retriever.getFrameAtTime(400000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)) ?: retriever.frameAtTime ?: return null
             val thumb = File(video.parentFile, video.nameWithoutExtension + "_thumb.jpg")
             thumb.outputStream().use { frame.compress(Bitmap.CompressFormat.JPEG, 82, it) }
             frame.recycle()
@@ -216,7 +216,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
                         val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
                         for (percent in listOf(15L, 38L, 61L, 84L)) {
                             val timeUs = if (durationMs > 0L) durationMs * 1000L * percent / 100L else (percent / 15L) * 1000000L
-                            val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
+                            val frame = (if (Build.VERSION.SDK_INT >= 27) retriever.getScaledFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC, 768, 768) ?: retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) else retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)) ?: continue
                             frames.pushString(frameToBase64(frame, 768))
                         }
                     } finally {

@@ -225,8 +225,15 @@ export function attachmentsFromJob(job:GenerationJob):MessageAttachment[]{
  return items;
 }
 export function attachmentFromJob(job:GenerationJob):MessageAttachment|null{return attachmentsFromJob(job)[0]||null;}
-export async function deleteLocalMedia(job:GenerationJob):Promise<void>{
- for(const item of attachmentsFromJob(job))if(Controls?.deleteMedia)await Controls.deleteMedia(filePath(item.uri)).catch(()=>false);
+export async function deleteLocalMedia(job:GenerationJob,item?:MessageAttachment):Promise<void>{
+ const current=attachmentsFromJob(job);
+ if(item){
+  if(Controls?.deleteMedia)await Controls.deleteMedia(filePath(item.uri)).catch(()=>false);
+  const remaining=current.filter(value=>value.id!==item.id);
+  if(remaining.length){await updateGenerationJob(job.promptId,job.status,remaining.map(value=>JSON.stringify(value)));return;}
+ }else if(Controls?.deleteMedia){
+  for(const value of current)await Controls.deleteMedia(filePath(value.uri)).catch(()=>false);
+ }
  await deleteGenerationJob(job.id);
 }
 
