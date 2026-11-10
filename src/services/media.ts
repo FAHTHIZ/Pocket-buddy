@@ -195,8 +195,8 @@ export async function createMedia(request:MediaRequest,onProgress?:MediaProgress
  const style=request.kind==='audio'?(request.audioStyle||detectAudioStyle(prompt)):undefined;
  const selected=request.model||(request.kind==='image'?config.imageModel:request.kind==='video'?config.videoModel:style==='speech'?config.speechModel:style==='sfx'?config.sfxModel:config.musicModel);
  const model=request.kind==='image'?(selected.toLowerCase().includes('dev')?config.imageDevCheckpoint:config.imageSchnellCheckpoint):request.kind==='video'?config.videoCheckpoint:'';
- const inputAttachment=request.inputAttachments?.find(item=>(item.kind||'image')==='image');
- if(request.inputAttachments?.length&&!inputAttachment)throw new Error('Choose an image attachment for image-to-video.');
+ const inputAttachment=request.kind==='video'?request.inputAttachments?.find(item=>(item.kind||'image')==='image'):undefined;
+ if(request.kind==='video'&&request.inputAttachments?.length&&!inputAttachment)throw new Error('Choose a photo attachment for image-to-video; a video file cannot be used as the source image.');
  onProgress?.({items:[],done:0,total,status:'Queueing '+total+' '+request.kind+' job(s) on your ComfyUI server…'});
  const queued=await submitMediaJobs(request.kind,prompt,total,model,inputAttachment);
  onProgress?.({items:[],done:total,total,status:'Queued on your ComfyUI server'});
