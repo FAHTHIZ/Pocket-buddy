@@ -90,8 +90,8 @@ export function modeLabel(mode:CreateMode,models:MediaModel[]):string{
  const kind=mode.kind==='image'?'Image':mode.kind==='video'?'Video':mode.audioStyle==='speech'?'Speech':mode.audioStyle==='sfx'?'Sound FX':'Music';
  return kind+(mode.count>1?' ×'+mode.count:'')+' · '+name;
 }
-export function modeToRequest(mode:CreateMode,prompt:string):MediaRequest{
- return{kind:mode.kind,prompt,count:mode.count,model:mode.model,shape:mode.shape,audioStyle:mode.kind==='audio'?mode.audioStyle:undefined,duration:mode.kind==='image'?undefined:mode.duration||undefined,voice:mode.voice};
+export function modeToRequest(mode:CreateMode,prompt:string,inputAttachments:MessageAttachment[]=[]):MediaRequest{
+ return{kind:mode.kind,prompt,count:mode.count,model:mode.model,shape:mode.shape,audioStyle:mode.kind==='audio'?mode.audioStyle:undefined,duration:mode.kind==='image'?undefined:mode.duration||undefined,voice:mode.voice,...(inputAttachments.length?{inputAttachments}:{})};
 }
 export function useMediaModels(){
  const[models,setModels]=useState<MediaModel[]>(fallbackModels());

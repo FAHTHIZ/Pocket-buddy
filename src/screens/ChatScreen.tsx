@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState}from'react';
-import{ActivityIndicator,Alert,FlatList,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
+import{ActivityIndicator,Alert,FlatList,Image,KeyboardAvoidingView,Linking,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View}from'react-native';
 import Markdown from'react-native-markdown-display';
 import type{AppConfig,ChatMessage,MediaKind,MediaRequest,MessageAttachment}from'../types';
 import{AttachmentGallery,CreateOptions,modeLabel,modeToRequest,useMediaModels,type CreateMode}from'../components/MediaViews';
@@ -8,7 +8,7 @@ import{loadConfig}from'../services/storage';
 
 const C={bg:'#101012',panel:'#1d1d21',panel2:'#29292f',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa',blue:'#9fc0ff'};
 type Props={
- messages:ChatMessage[];onSend:(text:string,media?:MediaRequest)=>void;liveAttachments:MessageAttachment[];mediaProgress:{done:number;total:number}|null;mediaServerConfigured:boolean;onGetDefaultModel:()=>void;onOpenSettings:()=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
+ messages:ChatMessage[];onSend:(text:string,media?:MediaRequest,attachments?:MessageAttachment[])=>void;onPickAttachment:()=>Promise<MessageAttachment|null>;liveAttachments:MessageAttachment[];mediaProgress:{done:number;total:number}|null;mediaServerConfigured:boolean;onGetDefaultModel:()=>void;onOpenSettings:()=>void;onEditSend:(messageId:string,text:string)=>void;onRegenerate:()=>void;onCopy:(text:string)=>void;onVoiceInput:()=>Promise<string>;busy:boolean;status:string;modelName:string;
  liveText:string;toolsEnabled:boolean;onToggleTools:()=>void;onMenu:()=>void;onModels:()=>void;
  onQuickAction:(action:'image'|'video'|'audio'|'models'|'connectors'|'gallery')=>void;
  onSpeak:(text:string)=>void;onStopSpeech:()=>void;speechActive:boolean;
@@ -18,7 +18,7 @@ export default function ChatScreen(p:Props){
  const[draft,setDraft]=useState(''),[actions,setActions]=useState(false),[editingId,setEditingId]=useState<string|null>(null),[voiceBusy,setVoiceBusy]=useState(false);
  const[providerUrl,setProviderUrl]=useState('https://api.openai.com/v1');
  const[providerKey,setProviderKey]=useState(''),[providerModel,setProviderModel]=useState(''),[showProviderSetup,setShowProviderSetup]=useState(false);
- const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState('');
+ const[connecting,setConnecting]=useState(false),[connectError,setConnectError]=useState(''),[selectedAttachments,setSelectedAttachments]=useState<MessageAttachment[]>([]);
  const list=useRef<FlatList<ChatMessage>>(null);
  const models=useMediaModels();
  const[createMode,setCreateMode]=useState<CreateMode|null>(null),[optionsOpen,setOptionsOpen]=useState(false);
@@ -29,13 +29,23 @@ export default function ChatScreen(p:Props){
  };
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
  const send=()=>{
-  const value=draft.trim();if(!value||p.busy||p.modelStarting)return;
-  if(createMode&&!editingId){setDraft('');p.onSend(value,modeToRequest(createMode,value));return;}
+  const value=draft.trim()||(selectedAttachments.length?'Please analyse the attached photo or video.':'');
+  if(!value||p.busy||p.modelStarting)return;
+  if(createMode&&!editingId){setDraft('');p.onSend(value,modeToRequest(createMode,value,selectedAttachments),selectedAttachments);setSelectedAttachments([]);return;}
   if(p.needsSetup&&!detectDirectMediaRequest(value)){
-   Alert.alert('Pick a chat model first','Download the local chat model or connect your own OpenAI-compatible provider.',[{text:'Not now',style:'cancel'},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
+   Alert.alert('Pick a chat model first','Download a local chat model or connect your own OpenAI-compatible provider.',[{text:'Not now',style:'cancel'},{text:'Get Qwen3.8',onPress:p.onGetDefaultModel}]);
    return;
   }
-  const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value);
+  const target=editingId;setDraft('');setEditingId(null);if(target)p.onEditSend(target,value);else p.onSend(value,undefined,selectedAttachments);
+  setSelectedAttachments([]);
+ };
+ const attachMedia=async()=>{
+  if(p.busy||p.modelStarting)return;
+  if(selectedAttachments.length>=3){Alert.alert('Attachment limit','Attach up to three photos or videos to one message.');return;}
+  try{
+   const item=await p.onPickAttachment();
+   if(item)setSelectedAttachments(old=>old.length>=3?old:[...old,item]);
+  }catch(error){Alert.alert('Could not attach media',error instanceof Error?error.message:String(error));}
  };
  const captureVoice=async()=>{
   try{setVoiceBusy(true);const transcript=await p.onVoiceInput();if(transcript.trim())setDraft(old=>old.trim()?old.trim()+' '+transcript.trim():transcript.trim());}
@@ -112,6 +122,7 @@ export default function ChatScreen(p:Props){
     ListFooterComponent={p.busy&&p.mediaProgress?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><View style={s.thinkingInline}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Creating…'}</Text></View><AttachmentGallery items={p.liveAttachments} pending={Math.max(0,p.mediaProgress.total-p.liveAttachments.length)} /></View></View>:p.liveText?<View style={s.liveRow}><View style={s.avatar}><Text style={s.avatarGlyph}>✳</Text></View><View style={s.liveBubble}><Markdown style={markdown}>{p.liveText}</Markdown></View></View>:p.busy?<View style={s.thinking}><ActivityIndicator color={C.muted} size="small"/><Text style={s.thinkingText}>{p.status||'Thinking'}</Text></View>:undefined}
    />}
   <View style={s.composerWrap}>
+   {selectedAttachments.length?<ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingBottom:8}}>{selectedAttachments.map(item=><View key={item.id} style={{width:76,alignItems:'center',gap:4}}><View style={{width:64,height:64,borderRadius:10,overflow:'hidden',backgroundColor:'#29292f'}}>{item.thumbnail||item.kind==='image'?<Image source={{uri:item.thumbnail||item.uri}} style={{width:64,height:64}} resizeMode="cover"/>:<View style={{flex:1,alignItems:'center',justifyContent:'center'}}><Text style={{color:'#fff',fontSize:22}}>▶</Text></View>}</View><Pressable onPress={()=>setSelectedAttachments(old=>old.filter(value=>value.id!==item.id))}><Text style={{color:'#b9c9e8',fontSize:10}}>Remove</Text></Pressable></View>)}</ScrollView>:null}
    {editingId?<View style={s.editingBanner}><Text style={s.editingText}>Editing this message. Sending replaces it and regenerates the reply.</Text><Pressable onPress={()=>{setEditingId(null);setDraft('');}}><Text style={s.editingCancel}>Cancel</Text></Pressable></View>:null}
    {createMode?<View style={s.createChip}>
     <Pressable style={{flex:1}} onPress={()=>setOptionsOpen(true)}><Text style={s.createChipText} numberOfLines={1}>{createMode.kind==='image'?'▧':createMode.kind==='video'?'▶':'♫'}  {modeLabel(createMode,models)}  ⌄</Text></Pressable>
@@ -127,7 +138,7 @@ export default function ChatScreen(p:Props){
      <Pressable style={s.plusButton} onPress={()=>setActions(true)}><Text style={s.plus}>＋</Text></Pressable>
      <Pressable style={[s.voiceButton,(voiceBusy||p.busy)&&s.sendDisabled]} onPress={captureVoice} disabled={voiceBusy||p.busy||p.modelStarting}><Text style={s.voiceGlyph}>{voiceBusy?'…':'🎙'}</Text></Pressable>
      <Text style={s.inputHint}>{createMode?'Tap the chip above for options':'Chat · images · video · audio'}</Text>
-     <Pressable style={[s.sendButton,(!draft.trim()||p.busy||p.modelStarting)&&s.sendDisabled]} onPress={send} disabled={!draft.trim()||p.busy||p.modelStarting}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
+     <Pressable style={[s.sendButton,((!draft.trim()&&!selectedAttachments.length)||p.busy||p.modelStarting)&&s.sendDisabled]} onPress={send} disabled={(!draft.trim()&&!selectedAttachments.length)||p.busy||p.modelStarting}><Text style={s.sendArrow}>{p.busy?'…':'↑'}</Text></Pressable>
     </View>
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
@@ -137,6 +148,7 @@ export default function ChatScreen(p:Props){
    <Pressable style={s.modalShade} onPress={()=>setActions(false)}>
     <View style={s.actionSheet}>
      <Text style={s.sheetTitle}>Add to your session</Text>
+     <Action label="Attach photo or video" detail="Analyse a picture or use a source image with Wan 2.2" icon="＋" onPress={()=>{setActions(false);void attachMedia();}}/>
      <Action label="Create images" detail="FLUX.1 · 1–20 images via your host" icon="▧" onPress={()=>quick('image')}/>
      <Action label="Create video" detail={p.mediaServerConfigured?'Wan 2.2 on your ComfyUI host':'Configure your ComfyUI host'} icon="▶" onPress={()=>quick('video')}/>
      <Action label="Create audio" detail="Music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>

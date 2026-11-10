@@ -15,6 +15,7 @@ import{loadLocalModel,releaseLocalModel}from'./services/llm';
 import{readAloud,stopSpeech}from'./services/speech';
 import{captureVoiceInput}from'./services/voiceInput';
 import{copyToClipboard}from'./services/clipboard';
+import{pickChatAttachment}from'./services/media';
 import type{AppConfig,ChatMessage,Conversation,MediaRequest,MessageAttachment}from'./types';
 
 type Screen='chat'|'connectors'|'models'|'settings'|'media';
@@ -135,9 +136,9 @@ function BuddyApp(){
    catch(error){setBootError('Your response was generated, but chat history could not be saved: '+(error instanceof Error?error.message:String(error)));}
   }finally{setBusy(false);setStatus('');setMediaProgress(null);}
  };
- const send=async(text:string,mediaRequest?:MediaRequest)=>{
+ const send=async(text:string,mediaRequest?:MediaRequest,inputAttachments:MessageAttachment[] = [])=>{
   if(busy)return;
-  const user:ChatMessage={id:'message-'+Date.now(),role:'user',content:text,createdAt:Date.now()};
+  const user:ChatMessage={id:'message-'+Date.now(),role:'user',content:text,createdAt:Date.now(),...(inputAttachments.length?{attachments:inputAttachments}:{})};
   const next=[...messages,user],id=activeId||'chat-'+Date.now().toString(36);
   const title=conversations.find(item=>item.id===id)?.title||text.slice(0,48)||'New chat';
   await runTurn(id,next,title,mediaRequest);
@@ -219,7 +220,7 @@ function BuddyApp(){
  return <SafeAreaView style={s.safe} edges={['top','left','right']}>
   <StatusBar barStyle="light-content"/>
   {!ready?<View style={s.boot}><View style={s.bootLogo}><Text style={s.bootGlyph}>✳</Text></View><Text style={s.bootTitle}>Pocket Buddy</Text><ActivityIndicator color="#9fc0ff" size="small"/><Text style={s.bootHint}>Preparing your workspace…</Text></View>:<>
-  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} liveAttachments={liveAttachments} mediaProgress={mediaProgress} mediaServerConfigured={mediaServerConfigured} onGetDefaultModel={()=>{if(busy)return;setAutoStart(DEFAULT_PICK_ID);setScreen('models');}} onOpenSettings={()=>{if(!busy)setScreen('settings');}} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
+  {screen==='chat'&&<ChatScreen messages={messages} onSend={send} onPickAttachment={pickChatAttachment} liveAttachments={liveAttachments} mediaProgress={mediaProgress} mediaServerConfigured={mediaServerConfigured} onGetDefaultModel={()=>{if(busy)return;setAutoStart(DEFAULT_PICK_ID);setScreen('models');}} onOpenSettings={()=>{if(!busy)setScreen('settings');}} onEditSend={editAndSend} onRegenerate={regenerate} onCopy={copyMessage} onVoiceInput={captureVoiceInput} busy={busy} status={status} modelName={modelName} liveText={liveText} toolsEnabled={toolsEnabled} onToggleTools={()=>setToolsEnabled(v=>!v)} speechActive={speechActive} onSpeak={playMessage} onStopSpeech={stopVoice} needsSetup={!setupComplete&&!restoringModel} modelStarting={restoringModel} onConnectProvider={connectProvider} onMenu={()=>{if(!busy)setMenuOpen(true);}} onModels={()=>{if(!busy)setScreen('models');}} onQuickAction={action=>{if(busy)return;setScreen(action==='models'?'models':action==='connectors'?'connectors':action==='gallery'?'media':'chat');}}/>}
   {screen==='connectors'&&<ConnectorsScreen onBack={()=>setScreen('chat')} onSettings={()=>setScreen('settings')}/>}
   {screen==='models'&&<ModelsScreen onBack={()=>setScreen('chat')} onOpenSettings={()=>setScreen('settings')} onLoaded={modelLoaded} autoStart={autoStart} onAutoStartHandled={()=>setAutoStart('')}/>}
   {screen==='settings'&&<SettingsScreen onBack={()=>setScreen('chat')} onSaved={settingsSaved}/>}
