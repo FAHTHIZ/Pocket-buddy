@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: pocket-buddy-android-v7-${{ github.ref }}
-  # Let an active build finish; newer commits replace only the pending validation run.
+  # A newer commit on the same ref cancels the in-flight validation run.
   cancel-in-progress: true
 
 env:

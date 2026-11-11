@@ -239,7 +239,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
     private fun isPrivateComfyHost(hostname: String): Boolean {
         val host = hostname.lowercase().removePrefix("[").removeSuffix("]").trimEnd('.')
         if (host == "localhost" || host.endsWith(".local") || host.endsWith(".lan") || host.endsWith(".home.arpa")) return true
-        if (host == "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true
+        if (host == "::1" || (host.contains(':') && (host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")))) return true
         val parts = host.split('.')
         if (parts.size != 4 || parts.any { part ->
             val value = part.toIntOrNull()

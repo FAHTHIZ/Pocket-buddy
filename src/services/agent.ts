@@ -85,9 +85,9 @@ async function buildContextMessages(history:ChatMessage[],conversationId:string|
  for(const item of history.slice(start)){
   if(item.role!=='user'||!item.attachments?.length){result.push({role:item.role,content:item.content});continue;}
   const visual=item.attachments.filter(file=>file.kind==='image'||file.kind==='video');
-  if(!visual.length){result.push({role:item.role,content:item.content+'\\n[Audio attachment: transcription is not available in this build.]'});continue;}
-  if(config.mode!=='api'){result.push({role:item.role,content:item.content+'\\n[An earlier photo/video is stored on this phone but this local model cannot inspect it.]'});continue;}
-  if(!recentVisualIds.has(item.id)){result.push({role:item.role,content:item.content+'\\n[An earlier visual attachment was not re-sent to keep this mobile request small.]'});continue;}
+  if(!visual.length){result.push({role:item.role,content:item.content+'\n[Audio attachment: transcription is not available in this build.]'});continue;}
+  if(config.mode!=='api'){result.push({role:item.role,content:item.content+'\n[An earlier photo/video is stored on this phone but this local model cannot inspect it.]'});continue;}
+  if(!recentVisualIds.has(item.id)){result.push({role:item.role,content:item.content+'\n[An earlier visual attachment was not re-sent to keep this mobile request small.]'});continue;}
   const parts:ModelContentPart[]=[{type:'text',text:item.content||'Please analyse the attached image or video.'}];
   for(const file of visual){
    if(frameBudget<=0)break;

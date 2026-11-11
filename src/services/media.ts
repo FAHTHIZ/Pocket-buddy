@@ -15,7 +15,7 @@ function replacePrompt(value:any,prompt:string,model:string,variables:Record<str
 function isPrivateComfyHost(hostname:string):boolean{
  const host=hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/,'');
  if(host==='localhost'||host.endsWith('.local')||host.endsWith('.lan')||host.endsWith('.home.arpa'))return true;
- if(host==='::1'||host.startsWith('fc')||host.startsWith('fd')||host.startsWith('fe80:'))return true;
+ if(host==='::1'||(host.includes(':')&&/^(fc|fd|fe80:)/.test(host)))return true;
  const parts=host.split('.');
  if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||Number(part)>255))return false;
  const [a,b]=parts.map(Number);
