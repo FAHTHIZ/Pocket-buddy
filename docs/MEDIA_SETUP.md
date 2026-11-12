@@ -2,6 +2,8 @@
 
 Pocket Buddy is the Android control surface. **Wan 2.2** and **FLUX.1** run on a computer that you control, through ComfyUI. The APK does not contain these multi-gigabyte weights and does not try to run them on a typical phone.
 
+> **No computer?** Pocket Buddy can also make pictures and short clips entirely on the phone. Open **Models → Images & video · on this phone**, download an image model (DreamShaper 8 LCM or Realistic Vision 6 Hyper, about 1.6 GB each) or the video pack (Wan 2.1 1.3B plus its text encoder, about 4.3 GB), and keep **Images on this phone** switched on. Then just ask in chat: "make 4 pictures of…" or "make a 3-second video of…". Expect roughly 2–5 minutes per 512×512 picture and 20–60 minutes for a 1–3 second 416×240 clip on a mid-range phone such as a Helio G85 with 6 GB RAM. The rest of this guide is only needed for the higher-quality Wan 2.2 / FLUX.1 path.
+
 ## 1. Prepare the host computer
 
 1. Install and launch ComfyUI on a computer with enough memory and GPU capacity for the selected workflow.

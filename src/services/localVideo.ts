@@ -46,7 +46,7 @@ export async function generateLocalVideo(prompt:string,options:{shape:VideoShape
  const refusal=refusalFor(prompt);if(refusal)throw new Error(refusal);
  const status=await localEngineStatus();if(!status.available)throw new Error(status.detail);
  const files=await installedVideoPack();
- if(!VIDEO_PACK.every(item=>files[item.key]))throw new Error('Download the on-device video pack first: Models → Video on this phone (about '+(VIDEO_PACK_MB/1024).toFixed(1)+' GB, Wi-Fi recommended).');
+ if(!VIDEO_PACK.every(item=>files[item.key]))throw new Error('Download the on-device video pack first: Models → Images & video · on this phone (about '+(VIDEO_PACK_MB/1024).toFixed(1)+' GB, Wi-Fi recommended).');
  const report=(text:string)=>onProgress?.({items:[],done:0,total:1,status:text});
  report('Pausing the chat model to free memory…');await suspendLocalModel().catch(()=>false);
  const width=options.shape==='portrait'?240:416,height=options.shape==='portrait'?416:240,frames=framesFor(options.seconds);

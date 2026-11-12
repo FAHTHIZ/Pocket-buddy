@@ -89,7 +89,7 @@ export async function generateLocalImages(prompt:string,options:{count:number;sh
  const config=await loadConfig(),installed=await installedLocalImageFiles();
  const preferred=options.modelId&&installed[options.modelId]?options.modelId:installed[config.localImageModel]?config.localImageModel:LOCAL_IMAGE_MODELS.find(item=>installed[item.id])?.id;
  const model=LOCAL_IMAGE_MODELS.find(item=>item.id===preferred);
- if(!model)throw new Error('Download an on-device image model first: open Models → Image models and tap Download on DreamShaper 8 LCM (about 1.6 GB, Wi-Fi recommended).');
+ if(!model)throw new Error('Download an on-device image model first: open Models → Images & video · on this phone and tap Download on DreamShaper 8 LCM (about 1.6 GB, Wi-Fi recommended).');
  const total=Math.max(1,Math.min(20,Math.floor(options.count)||1));
  const {width,height}=sizeFor(options.shape);
  const items:MessageAttachment[]=[],failures:string[]=[];
