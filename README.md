@@ -6,9 +6,26 @@
 
 **A local-first, ChatGPT-style AI conversation for Android, with dedicated media models.**
 
-Pocket Buddy keeps everyday chat on the phone with GGUF models through llama.cpp. It also supports image and video generation through a ComfyUI server that you operate. The Android app is the client; your computer runs the large media models.
+Pocket Buddy keeps everyday chat on the phone with GGUF models through llama.cpp. It also draws images and short video clips **on the phone itself**, offline, with stable-diffusion.cpp. For higher-quality media you can optionally connect a ComfyUI server that you operate.
 
-## Dedicated media models
+## On-phone images and video (offline)
+
+Open **Models → Images & video · on this phone**, download a model once, then just say *“make 4 pictures of …”* or *“make a video of …”* in chat.
+
+| | Model | Download | Typical time on a mid-range phone (e.g. Helio G85, 6 GB) |
+|---|---|---|---|
+| Images (default) | [DreamShaper 8 LCM](https://huggingface.co/haven-ai-companion/dreamshaper8-lcm-gguf) · SD 1.5, 6 steps | ~1.6 GB | ~3–6 min per 512×512 picture |
+| Images (photoreal) | [Realistic Vision 6 Hyper](https://huggingface.co/second-state/Realistic_Vision_V6.0_B1-GGUF) · SD 1.5, 6 steps | ~1.6 GB | ~3–6 min per picture |
+| Fast decoder | [TAESD](https://huggingface.co/madebyollin/taesd) (auto-downloaded) | 10 MB | saves ~2 min per picture |
+| Video (experimental) | [Wan 2.1 T2V 1.3B GGUF](https://huggingface.co/off-grid-ai/Wan2.1-T2V-1.3B-GGUF) + [umT5 encoder](https://huggingface.co/off-grid-ai/Video-Companions-GGUF) + [CausVid LoRA](https://huggingface.co/Kijai/WanVideo_comfy) + [TAEW 2.1](https://github.com/madebyollin/taehv) | ~4.3 GB | 1–3 s clip at 416×240 in ~8–25 min |
+
+- Engine: [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) (MIT), built for ARM64 in CI (`scripts/build-sd-engine.sh`) in two variants: ARMv8.2 dotprod+fp16 and a baseline ARMv8.0 fallback. It runs as a separate process, so running out of memory never crashes the app. The chat model is paused while media is generated and reloads on the next message.
+- Measured with the same engine on a 2-core x86 machine: a 512×512 DreamShaper picture took ~3 min with TAESD; a 2-second Wan clip took ~11 min with peak RAM around 2 GB (spatial + temporal decode tiling).
+- Video is re-encoded on the phone from the engine's MJPEG AVI to H.264 MP4 so it plays and shares anywhere. Photo-to-video still requires Wan 2.2 on ComfyUI.
+- Content: adult content is allowed. Sexual content involving anyone who is or appears to be under 18 is always refused, and minor-related terms are added to the negative prompt of any sexual prompt.
+- Quality is well below FLUX.1 / Wan 2.2 on a PC GPU; that is the trade-off for running on a phone CPU.
+
+## Dedicated media models (your ComfyUI server, optional)
 
 - **FLUX.1 Schnell** — default image model, Apache 2.0.
 - **Wan 2.2 TI2V-5B** — Apache 2.0 text-to-video and image-to-video.
@@ -46,6 +63,8 @@ Workflows are user-supplied because ComfyUI node IDs, loader configuration, mode
 |---|---|
 | GGUF chat in On-device mode | This phone |
 | Chat through a configured API provider | The endpoint you choose |
+| On-phone images (DreamShaper / Realistic Vision) | This phone |
+| On-phone video (Wan 2.1 1.3B) | This phone |
 | FLUX.1 image generation | Your configured ComfyUI computer |
 | Wan 2.2 video generation | Your configured ComfyUI computer |
 | Web search | Your configured SearXNG instance |
@@ -71,7 +90,8 @@ The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Limitations
 
-- Wan 2.2 and FLUX.1 are not embedded in the APK and do not run on ordinary Android phones. They run on the ComfyUI computer you configure.
+- Wan 2.2 and FLUX.1 are not embedded in the APK and do not run on ordinary Android phones. They run on the ComfyUI computer you configure. The on-phone models above are much smaller substitutes.
+- On-phone generation is CPU-only and slow; keep the phone plugged in for video. Very low-memory phones (under 4 GB) may have the engine stopped by Android.
 - A valid API-format workflow and all required weights/custom nodes must exist on that computer.
 - The current adapter queues jobs and checks queue/history state. Automatic workflow authoring and robust output retrieval still depend on the configured server/workflow.
 - BigMoeOnEdge expert streaming is ARM64 + Android 10+; other platforms fall back to the standard local runtime.
