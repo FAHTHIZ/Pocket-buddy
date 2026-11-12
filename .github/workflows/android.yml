@@ -150,6 +150,23 @@ jobs:
           done
           echo "$sum  $target" | sha256sum -c -
 
+      - name: Cache on-device image engine (stable-diffusion.cpp)
+        if: success()
+        uses: actions/cache@v4
+        with:
+          path: android/.gradle/sd-engine/jniLibs
+          key: sd-engine-${{ hashFiles('scripts/build-sd-engine.sh') }}
+
+      - name: Build on-device image engine (stable-diffusion.cpp)
+        if: success()
+        shell: bash
+        run: |
+          out=android/.gradle/sd-engine/jniLibs/arm64-v8a
+          if [ -s "$out/libsdcli.so" ] && [ -s "$out/libsdcli_compat.so" ]; then echo "cached"; ls -la "$out"; exit 0; fi
+          sudo apt-get install -y -q ninja-build >/dev/null 2>&1 || true
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.3.13750724"
+          bash scripts/build-sd-engine.sh "$out"
+
       - name: Build standalone ARM64 release APK
         if: success()
         id: android_release
@@ -171,6 +188,11 @@ jobs:
               echo "MoE streaming engine bundled:"; unzip -l PocketBuddy.apk | grep -E "libbmoe|libggml|libllama|librnllama" | awk '{print $1, $4}'
             else
               echo "::error title=MoE engine::libbmoe-server.so is missing from the ARM64 APK."; code=1
+            fi
+            if unzip -l PocketBuddy.apk | grep -q "lib/arm64-v8a/libsdcli.so" && unzip -l PocketBuddy.apk | grep -q "lib/arm64-v8a/libsdcli_compat.so"; then
+              echo "On-device image engine bundled:"; unzip -l PocketBuddy.apk | grep -E "libsdcli" | awk '{print $1, $4}'
+            else
+              echo "::error title=Image engine::libsdcli.so is missing from the ARM64 APK."; code=1
             fi
           else
             echo "::error title=Android release build::Standalone ARM64 release build failed."

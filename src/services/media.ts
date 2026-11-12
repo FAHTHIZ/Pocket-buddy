@@ -1,7 +1,9 @@
+import{LOCAL_IMAGE_MODELS,generateLocalImages}from'./localImage';
 import{saveGenerationJob,listGenerationJobs,updateGenerationJob,deleteGenerationJob}from'./database';
 import{getComfyToken,loadConfig}from'./storage';
 import type{AudioStyle,GenerationJob,MediaKind,MediaRequest,MessageAttachment}from'../types';
 import{NativeModules}from'react-native';
+import{isPrivateComfyHost}from'./net';
 function replacePrompt(value:any,prompt:string,model:string,variables:Record<string,string>):any{
  if(typeof value==='string'){
   let result=value.replaceAll('{{prompt}}',prompt).replaceAll('__PROMPT__',prompt).replaceAll('{{model}}',model).replaceAll('__MODEL__',model);
@@ -11,15 +13,6 @@ function replacePrompt(value:any,prompt:string,model:string,variables:Record<str
  if(Array.isArray(value))return value.map(item=>replacePrompt(item,prompt,model,variables));
  if(value&&typeof value==='object'){const next:Record<string,unknown>={};for(const [key,child]of Object.entries(value))next[key]=replacePrompt(child,prompt,model,variables);return next;}
  return value;
-}
-function isPrivateComfyHost(hostname:string):boolean{
- const host=hostname.toLowerCase().replace(/^\[|\]$/g,'').replace(/\.$/,'');
- if(host==='localhost'||host.endsWith('.local')||host.endsWith('.lan')||host.endsWith('.home.arpa'))return true;
- if(host==='::1'||(host.includes(':')&&/^(fc|fd|fe80:)/.test(host)))return true;
- const parts=host.split('.');
- if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||Number(part)>255))return false;
- const [a,b]=parts.map(Number);
- return a===10||a===127||(a===172&&b>=16&&b<=31)||(a===192&&b===168)||(a===169&&b===254);
 }
 function comfyBaseUrl(raw:string):string{
  let endpoint:URL;try{endpoint=new URL(raw.trim());}catch{throw new Error('Enter a ComfyUI URL, for example http://192.168.1.20:8188.');}
@@ -184,7 +177,7 @@ export async function cancelMediaJob(promptId:string):Promise<void>{
 
 // ---------- Self-hosted media engine (ComfyUI) ----------
 export type MediaProgress=(update:{items:MessageAttachment[];done:number;total:number;status:string})=>void;
-export type MediaOutcome={attachments:MessageAttachment[];failures:string[];queued:GenerationJob[];engine:'comfyui'};
+export type MediaOutcome={attachments:MessageAttachment[];failures:string[];queued:GenerationJob[];engine:'comfyui'|'device'};
 const LIMITS:Record<MediaKind,number>={image:20,video:4,audio:4};
 export function detectAudioStyle(text:string):AudioStyle{
  if(/\b(say|speak|speech|voice ?over|narrat\w*|read (this|it|out)|tts|pronounce)\b/i.test(text))return 'speech';
@@ -194,6 +187,12 @@ export function detectAudioStyle(text:string):AudioStyle{
 export async function createMedia(request:MediaRequest,onProgress?:MediaProgress):Promise<MediaOutcome>{
  const config=await loadConfig(),prompt=request.prompt.trim();
  if(!prompt)throw new Error('Describe what you want to create.');
+ const localPick=LOCAL_IMAGE_MODELS.some(item=>item.id===request.model);
+ if(request.kind==='image'&&(localPick||(config.imageEngine==='device'&&!request.model))){
+  const shape=request.shape||config.imageShape,id=localPick?request.model:undefined;
+  const result=await generateLocalImages(prompt,{count:request.count,shape,modelId:id},onProgress);
+  return{attachments:result.attachments,failures:result.failures,queued:[],engine:'device'};
+ }
  if(!config.comfyUrl.trim())throw new Error('Connect your own ComfyUI server in Settings, then add the FLUX.1 or Wan 2.2 API workflow.');
  const total=Math.max(1,Math.min(LIMITS[request.kind],Math.floor(request.count)||1));
  const style=request.kind==='audio'?(request.audioStyle||detectAudioStyle(prompt)):undefined;

@@ -65,12 +65,12 @@ const definitions:ToolDefinition[]=[
 ];
 export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
  const config=await loadConfig();
- const result=definitions.filter(item=>{
+ const result=definitions.map(item=>config.imageEngine==='device'&&['generate_image','generate_images'].includes(item.function.name)?{...item,requiresConfirmation:false}:item).filter(item=>{
   const name=item.function.name;
   if(['web_search','read_webpage'].includes(name))return config.useWebSearch&&!!config.searxngUrl.trim();
   const comfy=config.mediaEngine==='comfyui'&&!!config.comfyUrl.trim();
   if(name==='generate_audio')return comfy&&!!config.audioWorkflow.trim();
-  if(['generate_image','generate_images'].includes(name))return comfy&&!!config.imageWorkflow.trim();
+  if(['generate_image','generate_images'].includes(name))return config.imageEngine==='device'||(comfy&&!!config.imageWorkflow.trim());
   if(name==='generate_video')return comfy&&!!config.videoWorkflow.trim();
   if(['generation_status','cancel_generation'].includes(name))return comfy;
   return true;

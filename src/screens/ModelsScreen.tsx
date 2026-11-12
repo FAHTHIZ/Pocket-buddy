@@ -3,6 +3,7 @@ import{ActivityIndicator,Alert,Pressable,ScrollView,StyleSheet,Text,TextInput,Vi
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import{downloadModel,getDeviceProfile,getModelFiles,searchHuggingFaceModels,listInstalledModels,registerInstalledModel,getModelBenchmark,saveModelBenchmark,deleteInstalledModelFile,refreshPendingModelDownloads,cancelModelDownload,ModelDownloadCancelledError,type HubFile,type HubModel}from'../services/modelLibrary';
 import{getLocalRuntimeStatus,loadLocalModel,runLocalBenchmark,moeEngineAvailable}from'../services/llm';
+import ImageModelsSection from'../components/ImageModelsSection';
 import{inspectModel,type ModelArchitecture}from'../services/hardware';
 import type{DeviceProfile,LocalBenchmark,LocalModelRecord,PendingModelDownloadState}from'../types';
 const C={bg:'#101012',panel:'#1e1e22',line:'#34343b',text:'#f4f4f5',muted:'#a1a1aa'};
@@ -138,6 +139,7 @@ export default function ModelsScreen({onBack,onOpenSettings,onLoaded,autoStart,o
     {!recommendedPicks.length?<Text style={s.quickSubtitle}>Reading your phone's memory profile…</Text>:null}
     {device?.totalRamMb?<Text style={s.quickFootnote}>Larger models are hidden on phones with less memory. Speed depends on your chip, free memory and context size.</Text>:null}
    </View>
+   <ImageModelsSection/>
    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.installedList}>
     {installed.length?installed.map(item=><View key={item.id} style={[s.installedCard,item.path===activePath&&s.installedCardActive]}><Text style={s.installedName} numberOfLines={2}>{item.name}</Text><Text style={s.installedFile} numberOfLines={2}>{item.fileName}</Text><Text style={s.installedSize}>{bytesLabel(item.size)}{arch[item.path]?' · '+(arch[item.path]!.isMoe?`MoE ${arch[item.path]!.expertUsedCount}/${arch[item.path]!.expertCount}`:'Dense'):''}</Text><Pressable disabled={busy} style={[s.loadButton,item.path===activePath&&s.loadedButton]} onPress={()=>activate(item)}><Text style={[s.loadButtonText,item.path===activePath&&s.loadedButtonText]}>{item.path===activePath?'Loaded':'Load model'}</Text></Pressable>
      {item.path===activePath?<Text style={s.activeHint}>Switch to another model before deleting</Text>:<Pressable disabled={busy} style={s.removeButton} onPress={()=>removeModel(item)}><Text style={s.removeButtonText}>Remove download</Text></Pressable>}</View>):<View style={s.noModels}><Text style={s.sub}>Your installed models will appear here.</Text></View>}

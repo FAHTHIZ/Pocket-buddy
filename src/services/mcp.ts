@@ -1,3 +1,4 @@
+import{isPrivateComfyHost}from'./net';
 import type{ToolDefinition}from'../types';
 import{getMcpToken,loadMcpServers,type McpServerConfig}from'./storage';
 
@@ -123,6 +124,8 @@ async function rpc(server:McpServerConfig,method:string,params:Record<string,unk
  const requestParams=modern?{...params,_meta:meta(version)}:params;
  const body:Record<string,unknown>={jsonrpc:'2.0',method,params:requestParams};
  if(!method.startsWith('notifications/'))body.id='pb-'+Date.now()+'-'+Math.floor(Math.random()*10000);
+ let endpoint:URL;try{endpoint=new URL(server.url);}catch{throw new Error('MCP server '+server.name+' has an invalid URL.');}
+ if(endpoint.protocol!=='https:'&&!(endpoint.protocol==='http:'&&isPrivateComfyHost(endpoint.hostname)))throw new Error('MCP server '+server.name+' must use HTTPS. Plain HTTP is allowed only for servers on your own Wi-Fi/LAN.');
  const response=await fetch(server.url,{method:'POST',headers,body:JSON.stringify(body)});
  if(response.status===202||response.status===204){
   return{connection:{era:connection?.era||(modern?'modern':'legacy'),version:connection?.version||version,sessionId:connection?.sessionId}};

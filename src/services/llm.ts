@@ -359,6 +359,7 @@ async function moeCompletion(config:AppConfig,messages:ModelMessage[],tools:Tool
 }
 async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{
  if(prewarmTask)await prewarmTask;
+ if(!localContext&&!moeServer&&suspendedLocalPath){const path=suspendedLocalPath;suspendedLocalPath='';await loadLocalModel(path,true);}
  if(!moeServer)await reevaluate(config).catch(()=>{});
  void rememberPrefix(messages,tools);
  if(moeServer)return moeCompletion(config,messages,tools,onToken);
@@ -377,4 +378,11 @@ async function localCompletion(config:AppConfig,messages:ModelMessage[],tools:To
 }
 export async function complete(messages:ModelMessage[],tools:ToolDefinition[],onToken?:(token:string)=>void):Promise<ModelResponse>{const config=await loadConfig();return config.mode==='local'?localCompletion(config,messages,tools,onToken):apiCompletion(config,messages,tools,onToken);}
 export async function testProviderConnection():Promise<string>{const config=await loadConfig();if(config.mode!=='api')throw new Error('Switch to API provider mode to test this connection.');const result=await apiCompletion(config,[{role:'user',content:'Reply with the single word OK.'}],[]);return result.content.trim()||'The provider responded, but returned no text.';}
-export async function releaseLocalModel():Promise<void>{await releaseAll();activeLocalPath='';activeLocalConfig=null;localRuntimeStatus='';activePlan=null;}
+let suspendedLocalPath='';
+/** Frees the chat model's RAM (for on-device image/video generation). The next chat message reloads it. */
+export async function suspendLocalModel():Promise<boolean>{
+ if(!localContext&&!moeServer)return false;
+ if(prewarmTask)await prewarmTask.catch(()=>{});
+ suspendedLocalPath=activeLocalPath;await releaseAll();activePlan=null;return true;
+}
+export async function releaseLocalModel():Promise<void>{suspendedLocalPath='';await releaseAll();activeLocalPath='';activeLocalConfig=null;localRuntimeStatus='';activePlan=null;}

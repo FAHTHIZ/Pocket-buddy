@@ -30,6 +30,8 @@ def moeEngineEnabled = reactNativeArchitectures.contains("arm64-v8a") && (projec
 def moeEngineApk = new File(rootProject.projectDir, ".gradle/moe-engine/bigmoeonedge-${moeEngineVersion}.apk")
 def moeEngineJniDir = layout.buildDirectory.dir("generated/moe-engine/jniLibs").get().asFile
 def moeEngineAssetsDir = layout.buildDirectory.dir("generated/moe-engine/assets").get().asFile
+// On-device image/video engine (stable-diffusion.cpp). Built by scripts/build-sd-engine.sh.
+def sdEngineJniDir = new File(rootProject.projectDir, ".gradle/sd-engine/jniLibs")
 
 react {
     autolinkLibrariesWithApp()
@@ -83,7 +85,7 @@ android {
 
     sourceSets {
         main {
-            jniLibs.srcDirs += [moeEngineJniDir]
+            jniLibs.srcDirs += [moeEngineJniDir, sdEngineJniDir]
             assets.srcDirs += [moeEngineAssetsDir]
         }
     }

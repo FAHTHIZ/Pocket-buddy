@@ -3,6 +3,7 @@ import{ActivityIndicator,Alert,FlatList,Image,KeyboardAvoidingView,Linking,Modal
 import Markdown from'react-native-markdown-display';
 import type{AppConfig,ChatMessage,MediaKind,MediaRequest,MessageAttachment}from'../types';
 import{AttachmentGallery,CreateOptions,modeLabel,modeToRequest,useMediaModels,type CreateMode}from'../components/MediaViews';
+import{isLocalImageModel}from'../services/mediaModels';
 import{detectDirectMediaRequest}from'../services/agent';
 import{loadConfig}from'../services/storage';
 
@@ -24,7 +25,7 @@ export default function ChatScreen(p:Props){
  const[createMode,setCreateMode]=useState<CreateMode|null>(null),[optionsOpen,setOptionsOpen]=useState(false);
  const startCreate=async(kind:MediaKind)=>{
   const config:AppConfig=await loadConfig();
-  const mode:CreateMode={kind,count:kind==='image'?4:1,model:kind==='image'?config.imageModel:kind==='video'?config.videoModel:config.musicModel,shape:kind==='video'&&config.imageShape==='square'?'landscape':config.imageShape,audioStyle:'music',duration:kind==='video'?config.videoDuration:0,voice:config.mediaVoice};
+  const mode:CreateMode={kind,count:kind==='image'?4:1,model:kind==='image'?(config.imageEngine==='device'?config.localImageModel:config.imageModel):kind==='video'?config.videoModel:config.musicModel,shape:kind==='video'&&config.imageShape==='square'?'landscape':config.imageShape,audioStyle:'music',duration:kind==='video'?config.videoDuration:0,voice:config.mediaVoice};
   setCreateMode(mode);
  };
  useEffect(()=>{const timer=setTimeout(()=>list.current?.scrollToEnd({animated:true}),90);return()=>clearTimeout(timer);},[p.messages.length,p.liveText,p.busy]);
@@ -102,9 +103,9 @@ export default function ChatScreen(p:Props){
        {connecting?<ActivityIndicator color="#111" size="small"/>:<Text style={s.connectButtonText}>Connect & start chatting  →</Text>}
       </Pressable>
      </View>:null}
-     <View style={s.mediaReady}><Text style={s.mediaReadyTitle}>Media works right now</Text><Text style={s.setupCopy}>Tap ＋ → Create image or Create video. Configure your ComfyUI server and FLUX.1 / Wan 2.2 workflows in Settings. Your computer performs generation.</Text>
-      {!p.mediaServerConfigured?<Pressable style={s.localButton} onPress={p.onOpenSettings}><Text style={s.localButtonText}>Configure my media server</Text></Pressable>:null}</View>
-     <Text style={s.setupPrivacy}>Local models and chats stay on this phone. Media prompts are sent to the media service you choose.</Text>
+     <View style={s.mediaReady}><Text style={s.mediaReadyTitle}>Images work on this phone</Text><Text style={s.setupCopy}>Say “make 4 pictures of …” or tap ＋ → Create images. Pictures are drawn offline by DreamShaper or Realistic Vision (download once in Models). Video and audio use your own ComfyUI server.</Text>
+      <Pressable style={s.localButton} onPress={()=>quick('models')}><Text style={s.localButtonText}>Get an image model</Text></Pressable></View>
+     <Text style={s.setupPrivacy}>Local models and chats stay on this phone. On-phone images never leave the device. Video/audio prompts go only to the server you choose.</Text>
     </View>:<View style={s.suggestions}>
      <Pressable style={s.suggestion} onPress={()=>setDraft('Explain a complex topic in simple terms')}><Text style={s.suggestionText}>Explain a complex topic</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
      <Pressable style={s.suggestion} onPress={()=>{void startCreate('image');setDraft('a cozy cyberpunk ramen shop at night, rain, neon reflections');}}><Text style={s.suggestionText}>Create 4 images at once</Text><Text style={s.suggestionArrow}>↗</Text></Pressable>
@@ -149,13 +150,13 @@ export default function ChatScreen(p:Props){
    </View>
    <Text style={s.disclaimer}>Pocket Buddy can make mistakes. Check important information.</Text>
   </View>
-  {optionsOpen&&createMode?<CreateOptions mode={createMode} models={models} connected={p.mediaServerConfigured} onChange={setCreateMode} onClose={()=>setOptionsOpen(false)} onConnect={()=>{setOptionsOpen(false);p.onOpenSettings();}}/>:null}
+  {optionsOpen&&createMode?<CreateOptions mode={createMode} models={models} connected={p.mediaServerConfigured||(createMode.kind==='image'&&isLocalImageModel(createMode.model))} onChange={setCreateMode} onClose={()=>setOptionsOpen(false)} onConnect={()=>{setOptionsOpen(false);p.onOpenSettings();}}/>:null}
   <Modal visible={actions} transparent animationType="fade" onRequestClose={()=>setActions(false)}>
    <Pressable style={s.modalShade} onPress={()=>setActions(false)}>
     <View style={s.actionSheet}>
      <Text style={s.sheetTitle}>Add to your session</Text>
      <Action label="Attach photo or video" detail="Analyse a picture or use a source image with Wan 2.2" icon="＋" onPress={()=>{setActions(false);void attachMedia();}}/>
-     <Action label="Create images" detail="FLUX.1 · 1–20 images via your host" icon="▧" onPress={()=>quick('image')}/>
+     <Action label="Create images" detail="1–20 images · drawn on this phone, offline" icon="▧" onPress={()=>quick('image')}/>
      <Action label="Create video" detail={p.mediaServerConfigured?'Wan 2.2 on your ComfyUI host':'Configure your ComfyUI host'} icon="▶" onPress={()=>quick('video')}/>
      <Action label="Create audio" detail="Music, speech or sound effects" icon="♫" onPress={()=>quick('audio')}/>
      <Action label="Choose a model" detail="Install or switch a local model" icon="◈" onPress={()=>quick('models')} disabled={p.busy}/>

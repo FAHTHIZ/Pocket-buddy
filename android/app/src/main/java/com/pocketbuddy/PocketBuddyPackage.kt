@@ -7,7 +7,7 @@ import com.facebook.react.uimanager.ViewManager
 
 class PocketBuddyPackage : ReactPackage {
     override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> =
-        listOf(PocketBuddyNativeModule(context), PocketBuddyMediaModule(context), PocketBuddyHardwareModule(context), PocketBuddyMoeModule(context))
+        listOf(PocketBuddyNativeModule(context), PocketBuddyMediaModule(context), PocketBuddyHardwareModule(context), PocketBuddyMoeModule(context), PocketBuddyDiffusionModule(context))
 
     override fun createViewManagers(context: ReactApplicationContext): List<ViewManager<*, *>> =
         emptyList()

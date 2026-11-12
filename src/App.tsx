@@ -239,7 +239,7 @@ function BuddyApp(){
      <ScrollView style={{flex:1}}>
       {conversations.map(item=><Pressable key={item.id} onPress={()=>chooseChat(item)} onLongPress={()=>deleteChat(item)} style={[s.chatLink,item.id===activeId&&s.chatLinkActive]}><Text style={s.chatLinkText} numberOfLines={1}>{item.title}</Text></Pressable>)}
      </ScrollView>
-     <View style={s.footer}><Text style={s.footerTitle}>{mediaServerConfigured?'Media: your ComfyUI host is configured':'Media: configure your own host'}</Text><Text style={s.footerText}>{mediaServerConfigured?'FLUX.1 and Wan 2.2 workflows will run on your computer.':'Connect a ComfyUI host and add the FLUX.1 and Wan 2.2 workflows in Settings.'}</Text></View>
+     <View style={s.footer}><Text style={s.footerTitle}>Images: drawn on this phone</Text><Text style={s.footerText}>{mediaServerConfigured?'Video and audio run on your ComfyUI host.':'Video and audio need your own ComfyUI host (Settings).'}</Text></View>
     </View>
    </View>
   </Modal>

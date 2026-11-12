@@ -122,14 +122,16 @@ function uniqueDownloadName(id:string,file:string):string{
  const prefix=id.replace(/[^A-Za-z0-9._-]/g,'_').slice(0,48)||'model',digest=(hash>>>0).toString(16).padStart(8,'0'),leaf=file.split('/').pop()||'model.gguf';
  return prefix+'-'+digest+'-'+leaf.slice(-Math.max(24,180-prefix.length-digest.length-2));
 }
-export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number,sha256?:string):Promise<string>{
+/** Downloads a non-chat file (image model, decoder) without listing it as a chat model. */
+export function downloadModelFile(id:string,file:string,onProgress:(value:number)=>void,size?:number,sha256?:string):Promise<string>{return downloadModel(id,file,onProgress,undefined,size,sha256,false);}
+export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number,sha256?:string,register=true):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
  const encodedId=id.split('/').map(encodeURIComponent).join('/'),encodedFile=file.split('/').map(encodeURIComponent).join('/'),url='https://huggingface.co/'+encodedId+'/resolve/main/'+encodedFile;
  const result=await Native.startDownload(url,uniqueDownloadName(id,file),await hfHeaders()),downloadId=result.downloadId;
  activeDownloadIds.add(downloadId);
  try{
   onId?.(downloadId);
-  await savePendingModelDownload({downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,sha256,startedAt:Date.now()});
+  if(register)await savePendingModelDownload({downloadId,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,size,sha256,startedAt:Date.now()});
   for(let attempt=0;attempt<6*60*60;attempt++){
    if(cancelledDownloadIds.has(downloadId))throw new ModelDownloadCancelledError();
    let state:NativeDownloadStatus;
@@ -148,7 +150,7 @@ export async function downloadModel(id:string,file:string,onProgress:(value:numb
        throw new Error('The downloaded model failed SHA-256 verification and was removed. Please try the download again.');
       }
      }
-     await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,sha256,addedAt:Date.now()});
+     if(register)await registerInstalledModel({id:id+'::'+file,modelId:id,name:id.split('/').pop()||'Local model',fileName:file,path:state.localPath,size,sha256,addedAt:Date.now()});
      await forgetPendingModelDownload(downloadId);return state.localPath;
     }
     throw new Error('Android reports the download finished but did not return a readable model file path.');

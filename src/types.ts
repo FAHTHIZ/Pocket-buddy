@@ -1,5 +1,6 @@
 export type ProviderMode='api'|'local';
 export type MediaEngine='comfyui';
+export type ImageEngine='device'|'comfyui';
 export type ImageShape='square'|'portrait'|'landscape';
 export type AudioStyle='music'|'speech'|'sfx';
 export type MediaKind='image'|'video'|'audio';
@@ -12,7 +13,7 @@ export type ModelContentPart={type:'text';text:string}|{type:'image_url';image_u
 export type ModelMessage={role:ChatRole;content:string|null|ModelContentPart[];name?:string;tool_call_id?:string;tool_calls?:ToolCall[]};
 export type ToolDefinition={type:'function';function:{name:string;description:string;parameters:Record<string,unknown>};requiresConfirmation?:boolean};
 export type ModelResponse={content:string;toolCalls:ToolCall[]};
-export type AppConfig={mode:ProviderMode;baseUrl:string;model:string;temperature:number;maxToolTurns:number;useWebSearch:boolean;searxngUrl:string;comfyUrl:string;imageWorkflow:string;videoWorkflow:string;audioWorkflow:string;voiceId:string;voiceModel:string;mediaEngine:MediaEngine;imageModel:string;imageSchnellCheckpoint:string;imageDevCheckpoint:string;videoModel:string;videoCheckpoint:string;musicModel:string;speechModel:string;sfxModel:string;mediaVoice:string;imageShape:ImageShape;videoDuration:number;videoAudio:boolean;nCtx:number;nGpuLayers:number;perfProfile:'auto'|'battery'|'balanced'|'max';moeMode:'auto'|'on'|'off';autoContext:boolean;assistantName:string;systemPrompt:string};
+export type AppConfig={mode:ProviderMode;baseUrl:string;model:string;temperature:number;maxToolTurns:number;useWebSearch:boolean;searxngUrl:string;comfyUrl:string;imageWorkflow:string;videoWorkflow:string;audioWorkflow:string;voiceId:string;voiceModel:string;mediaEngine:MediaEngine;imageEngine:ImageEngine;localImageModel:string;localImageFastDecode:boolean;localImageSteps:number;localImageThreads:number;imageModel:string;imageSchnellCheckpoint:string;imageDevCheckpoint:string;videoModel:string;videoCheckpoint:string;musicModel:string;speechModel:string;sfxModel:string;mediaVoice:string;imageShape:ImageShape;videoDuration:number;videoAudio:boolean;nCtx:number;nGpuLayers:number;perfProfile:'auto'|'battery'|'balanced'|'max';moeMode:'auto'|'on'|'off';autoContext:boolean;assistantName:string;systemPrompt:string};
 export type Conversation={id:string;title:string;updatedAt:number;messages:ChatMessage[]};
 export type McpServerConfig={id:string;name:string;url:string;enabled:boolean};
 export type DeviceProfile={manufacturer:string;model:string;soc:string;sdk:number;totalRamMb:number;availableRamMb:number;availableStorageMb:number;memoryClassMb:number;thermalStatus:number};

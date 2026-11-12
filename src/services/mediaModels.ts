@@ -1,6 +1,8 @@
 import type {AudioStyle,MediaKind} from '../types';
 export type MediaModel={id:string;title:string;description:string;kind:MediaKind;audioStyle?:AudioStyle;licenseLabel:string;durations?:number[];minDuration?:number;maxDuration?:number;audioOutput?:boolean};
 const MODELS:MediaModel[]=[
+ {id:'dreamshaper8-lcm',title:'DreamShaper 8 LCM · on this phone',description:'Offline, private, unfiltered for adults · ~1–4 min per picture · download in Models',kind:'image',licenseLabel:'On device'},
+ {id:'realvis6-hyper',title:'Realistic Vision 6 · on this phone',description:'Offline photoreal people and scenes · ~1–4 min per picture · download in Models',kind:'image',licenseLabel:'On device'},
  {id:'black-forest-labs/FLUX.1-schnell',title:'FLUX.1 Schnell',description:'12B image model · 1–4 steps · Apache 2.0',kind:'image',licenseLabel:'Apache 2.0'},
  {id:'black-forest-labs/FLUX.1-dev',title:'FLUX.1 Dev',description:'Higher-quality variant · non-commercial license; review terms before use',kind:'image',licenseLabel:'Non-commercial'},
  {id:'Wan-AI/Wan2.2-TI2V-5B',title:'Wan 2.2 TI2V-5B',description:'Text-to-video and image-to-video · 720p-capable · substantial GPU memory',kind:'video',licenseLabel:'Apache 2.0',durations:[5]},
@@ -8,6 +10,7 @@ const MODELS:MediaModel[]=[
  {id:'comfyui/speech-workflow',title:'Your ComfyUI speech workflow',description:'Uses the speech model configured in your own workflow',kind:'audio',audioStyle:'speech',licenseLabel:'Your workflow'},
  {id:'comfyui/sfx-workflow',title:'Your ComfyUI sound workflow',description:'Uses the sound model configured in your own workflow',kind:'audio',audioStyle:'sfx',licenseLabel:'Your workflow',minDuration:1,maxDuration:22},
 ];
+export const isLocalImageModel=(id?:string)=>id==='dreamshaper8-lcm'||id==='realvis6-hyper';
 export const MEDIA_VOICES=['default'];
 export function fallbackModels():MediaModel[]{return MODELS;}
 export async function listMediaModels():Promise<MediaModel[]>{return MODELS;}
