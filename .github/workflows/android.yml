@@ -181,6 +181,7 @@ jobs:
             assembleRelease --stacktrace > android-release-build.log 2>&1
           code=$?
           tail -n 180 android-release-build.log
+          echo "---- compiler errors ----"; grep -nE "^e: |error: " android-release-build.log | head -n 60 || true
           echo "$code" > android-release.exit
           if [ "$code" -eq 0 ]; then
             cp android/app/build/outputs/apk/release/app-release.apk PocketBuddy.apk

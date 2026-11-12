@@ -101,7 +101,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
             promise.reject("PICKER_BUSY", "A media picker is already open.")
             return
         }
-        val activity = currentActivity
+        val activity = reactApplicationContext.currentActivity
         if (activity == null) {
             promise.reject("PICKER_UNAVAILABLE", "Pocket Buddy could not open the Android media picker.")
             return
@@ -121,7 +121,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
         }
     }
 
-    override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
+    override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode != CHAT_MEDIA_PICKER_REQUEST) return
         val promise = chatPickerPromise ?: return
         chatPickerPromise = null
@@ -174,7 +174,7 @@ class PocketBuddyMediaModule(private val context: ReactApplicationContext) : Rea
         }, "PocketBuddyImportChatMedia").start()
     }
 
-    override fun onNewIntent(intent: Intent?) {}
+    override fun onNewIntent(intent: Intent) {}
 
     private fun frameToBase64(bitmap: Bitmap, maxSide: Int): String {
         val largest = maxOf(bitmap.width, bitmap.height)
