@@ -123,11 +123,13 @@ function uniqueDownloadName(id:string,file:string):string{
  return prefix+'-'+digest+'-'+leaf.slice(-Math.max(24,180-prefix.length-digest.length-2));
 }
 /** Downloads a non-chat file (image model, decoder) without listing it as a chat model. */
-export function downloadModelFile(id:string,file:string,onProgress:(value:number)=>void,size?:number,sha256?:string):Promise<string>{return downloadModel(id,file,onProgress,undefined,size,sha256,false);}
-export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number,sha256?:string,register=true):Promise<string>{
+export function downloadModelFile(id:string,file:string,onProgress:(value:number)=>void,size?:number,sha256?:string,directUrl?:string):Promise<string>{return downloadModel(id,file,onProgress,undefined,size,sha256,false,directUrl);}
+export async function downloadModel(id:string,file:string,onProgress:(value:number)=>void,onId?:(id:string)=>void,size?:number,sha256?:string,register=true,directUrl?:string):Promise<string>{
  if(!Native?.startDownload||!Native?.getDownloadStatus)throw new Error('Android system download manager is unavailable.');
- const encodedId=id.split('/').map(encodeURIComponent).join('/'),encodedFile=file.split('/').map(encodeURIComponent).join('/'),url='https://huggingface.co/'+encodedId+'/resolve/main/'+encodedFile;
- const result=await Native.startDownload(url,uniqueDownloadName(id,file),await hfHeaders()),downloadId=result.downloadId;
+ const encodedId=id.split('/').map(encodeURIComponent).join('/'),encodedFile=file.split('/').map(encodeURIComponent).join('/'),url=directUrl||'https://huggingface.co/'+encodedId+'/resolve/main/'+encodedFile;
+ if(directUrl&&!directUrl.startsWith('https://'))throw new Error('Direct downloads must use HTTPS.');
+ // Never send the Hugging Face token to other hosts.
+ const result=await Native.startDownload(url,uniqueDownloadName(id,file),directUrl?{}:await hfHeaders()),downloadId=result.downloadId;
  activeDownloadIds.add(downloadId);
  try{
   onId?.(downloadId);

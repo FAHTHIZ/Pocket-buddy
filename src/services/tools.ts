@@ -71,7 +71,7 @@ export async function getAllToolDefinitions():Promise<ToolDefinition[]>{
   const comfy=config.mediaEngine==='comfyui'&&!!config.comfyUrl.trim();
   if(name==='generate_audio')return comfy&&!!config.audioWorkflow.trim();
   if(['generate_image','generate_images'].includes(name))return config.imageEngine==='device'||(comfy&&!!config.imageWorkflow.trim());
-  if(name==='generate_video')return comfy&&!!config.videoWorkflow.trim();
+  if(name==='generate_video')return config.videoEngine==='device'||(comfy&&!!config.videoWorkflow.trim());
   if(['generation_status','cancel_generation'].includes(name))return comfy;
   return true;
  });

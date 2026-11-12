@@ -152,6 +152,12 @@ class PocketBuddyDiffusionModule(private val context: ReactApplicationContext) :
                 optionalFile("t5xxl", "--t5xxl")
                 optionalFile("clipL", "--clip_l")
                 optionalFile("initImage", "--init-img")
+                if (options.hasKey("loraDir")) options.getString("loraDir")?.takeIf { it.isNotBlank() }?.let { raw ->
+                    val dir = File(raw.removePrefix("file://")).canonicalFile
+                    val roots = listOfNotNull(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.canonicalFile, context.filesDir.canonicalFile)
+                    if (!dir.isDirectory || roots.none { dir.path == it.path || dir.path.startsWith(it.path + File.separator) }) throw IllegalArgumentException("The LoRA folder is not accessible.")
+                    argv += listOf("--lora-model-dir", dir.path)
+                }
                 argv += listOf(
                     "-p", prompt,
                     "-W", width.toString(), "-H", height.toString(),
@@ -172,6 +178,9 @@ class PocketBuddyDiffusionModule(private val context: ReactApplicationContext) :
                     if (options.hasKey("fps")) argv += listOf("--fps", options.getInt("fps").coerceIn(4, 30).toString())
                 }
                 if (!options.hasKey("vaeTiling") || options.getBoolean("vaeTiling")) argv += "--vae-tiling"
+                // Video: decode a few frames at a time (peak RAM ~2 GB instead of ~6 GB for 33 frames) and
+                // use flash attention for the long video token sequence.
+                if (isVideo) argv += listOf("--temporal-tiling", "--flash-attn", "on")
                 // Memory-map weights so Android can page them out instead of killing the process.
                 argv += "--mmap"
 
@@ -243,9 +252,26 @@ class PocketBuddyDiffusionModule(private val context: ReactApplicationContext) :
                     )
                 }
                 val result = Arguments.createMap()
-                result.putString("path", out.absolutePath)
-                result.putString("mimeType", if (isVideo) "video/x-msvideo" else "image/png")
-                result.putDouble("size", out.length().toDouble())
+                var finalFile = out
+                if (isVideo) {
+                    val progress = Arguments.createMap()
+                    progress.putString("jobId", jobId); progress.putString("phase", "decoding")
+                    progress.putDouble("elapsedMs", (System.currentTimeMillis() - started).toDouble()); emit(progress)
+                    val mp4 = File(out.parentFile, out.nameWithoutExtension + ".mp4")
+                    val thumb = File(out.parentFile, out.nameWithoutExtension + "_thumb.jpg")
+                    val fps = if (options.hasKey("fps")) options.getInt("fps").coerceIn(4, 30) else 16
+                    try {
+                        val count = MjpegAviToMp4.convert(out, mp4, fps, thumb)
+                        out.delete(); finalFile = mp4
+                        result.putInt("frames", count)
+                    } catch (error: Exception) {
+                        mp4.delete() // keep the AVI; some players can still open it
+                    }
+                    if (thumb.exists()) result.putString("thumbnail", thumb.absolutePath)
+                }
+                result.putString("path", finalFile.absolutePath)
+                result.putString("mimeType", if (!isVideo) "image/png" else if (finalFile.extension == "mp4") "video/mp4" else "video/x-msvideo")
+                result.putDouble("size", finalFile.length().toDouble())
                 result.putDouble("elapsedMs", (System.currentTimeMillis() - started).toDouble())
                 result.putInt("threads", threads)
                 result.putString("engine", detail)

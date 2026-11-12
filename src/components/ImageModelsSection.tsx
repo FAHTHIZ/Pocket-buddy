@@ -2,6 +2,7 @@ import React,{useEffect,useState}from'react';
 import{Alert,Pressable,StyleSheet,Switch,Text,View}from'react-native';
 import{LOCAL_IMAGE_MODELS,TAESD,downloadLocalImageModel,downloadTaesd,forgetLocalImageModel,installedLocalImageFiles,localEngineStatus}from'../services/localImage';
 import{deleteInstalledModelFile}from'../services/modelLibrary';
+import{VIDEO_PACK,VIDEO_PACK_MB,downloadVideoPack,forgetVideoPack,installedVideoPack}from'../services/localVideo';
 import{loadConfig,saveConfig}from'../services/storage';
 import type{AppConfig}from'../types';
 
@@ -9,7 +10,16 @@ import type{AppConfig}from'../types';
 export default function ImageModelsSection(){
  const[installed,setInstalled]=useState<Record<string,string>>({}),[config,setConfig]=useState<AppConfig|null>(null);
  const[busy,setBusy]=useState(''),[progress,setProgress]=useState(0),[engine,setEngine]=useState<{available:boolean;detail:string}|null>(null);
- const refresh=async()=>{setInstalled(await installedLocalImageFiles());setConfig(await loadConfig());};
+ const[video,setVideo]=useState<Record<string,string>>({}),[videoLabel,setVideoLabel]=useState('');
+ const refresh=async()=>{setInstalled(await installedLocalImageFiles());setVideo(await installedVideoPack());setConfig(await loadConfig());};
+ const getVideo=async()=>{
+  if(busy)return;
+  try{setBusy('video');setProgress(0);await downloadVideoPack((label,percent)=>{setVideoLabel(label);setProgress(percent);});await refresh();}
+  catch(error){Alert.alert('Download failed',(error instanceof Error?error.message:String(error))+'\n\nFinished files are kept; tap Download again to continue.');await refresh();}
+  finally{setBusy('');setProgress(0);setVideoLabel('');}
+ };
+ const removeVideo=()=>Alert.alert('Delete the video pack?','Frees about '+(VIDEO_PACK_MB/1024).toFixed(1)+' GB.',[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{for(const path of await forgetVideoPack())await deleteInstalledModelFile(path).catch(()=>false);await refresh();}}]);
+ const videoCount=VIDEO_PACK.filter(item=>video[item.key]).length,videoReady=videoCount===VIDEO_PACK.length;
  useEffect(()=>{refresh().catch(()=>{});localEngineStatus().then(setEngine).catch(()=>{});},[]);
  const update=async(patch:Partial<AppConfig>)=>{const next={...(await loadConfig()),...patch};await saveConfig(next);setConfig(next);};
  const download=async(id:string)=>{
@@ -27,7 +37,7 @@ export default function ImageModelsSection(){
  ]);
  const deviceMode=config?.imageEngine!=='comfyui';
  return <View style={s.section}>
-  <View style={s.head}><View style={{flex:1}}><Text style={s.title}>Image models · on this phone</Text><Text style={s.sub}>Create pictures offline with no account and no server. Adult content is allowed; sexual content involving minors is always refused. A 512×512 picture takes roughly 1–4 minutes on a mid-range phone; the chat model pauses while it draws.</Text></View></View>
+  <View style={s.head}><View style={{flex:1}}><Text style={s.title}>Images & video · on this phone</Text><Text style={s.sub}>Create pictures offline with no account and no server. Adult content is allowed; sexual content involving minors is always refused. A picture takes roughly 3–6 minutes on a mid-range phone such as the Helio G85 (faster on newer chips); the chat model pauses while it draws.</Text></View></View>
   {engine&&!engine.available?<Text style={s.warn}>{engine.detail}</Text>:null}
   <View style={s.row}><Text style={s.rowLabel}>Make images on this phone</Text><Switch value={deviceMode} onValueChange={value=>update({imageEngine:value?'device':'comfyui'})}/></View>
   {!deviceMode?<Text style={s.note}>Images currently go to your ComfyUI server (Settings).</Text>:null}
@@ -44,9 +54,17 @@ export default function ImageModelsSection(){
     </View>
    </View>;
   })}
+  <View style={[s.card,{marginTop:14}]}>
+   <View style={s.cardTop}><View style={{flex:1}}><Text style={s.name}>Video on this phone · Wan 2.1 1.3B</Text><Text style={s.meta}>~{(VIDEO_PACK_MB/1024).toFixed(1)} GB pack · Apache 2.0 · experimental</Text></View>{videoReady?<Text style={s.tag}>Ready</Text>:null}</View>
+   <Text style={s.desc}>Offline text-to-video: 1–3 second clips at 416×240 that take about 8–25 minutes each on a mid-range phone (keep it plugged in). Quality is far below Wan 2.2 on a PC, but nothing leaves your phone.</Text>
+   <View style={s.row}><Text style={s.rowLabel}>Make videos on this phone</Text><Switch value={config?.videoEngine!=='comfyui'} onValueChange={value=>update({videoEngine:value?'device':'comfyui'})}/></View>
+   <View style={s.actions}>
+    {busy==='video'?<Text style={s.progress} numberOfLines={1}>{videoLabel?videoLabel.slice(0,28)+' · ':''}{progress}%</Text>:videoReady?<Pressable style={s.ghost} onPress={removeVideo}><Text style={s.ghostText}>Delete</Text></Pressable>:<Pressable disabled={!!busy} style={[s.button,!!busy&&s.disabled]} onPress={getVideo}><Text style={s.buttonText}>{videoCount?'Resume download ('+videoCount+'/'+VIDEO_PACK.length+')':'Download'}</Text></Pressable>}
+   </View>
+  </View>
   <View style={s.row}>
-   <View style={{flex:1}}><Text style={s.rowLabel}>Fast decoder (TAESD, {TAESD.approxMb} MB)</Text><Text style={s.note}>Saves ~20–40 s per picture with slightly softer detail.</Text></View>
-   {installed.taesd?<Switch value={!!config?.localImageFastDecode} onValueChange={value=>update({localImageFastDecode:value})}/>:busy==='taesd'?<Text style={s.progress}>{progress}%</Text>:<Pressable disabled={!!busy} style={[s.button,!!busy&&s.disabled]} onPress={()=>download('taesd')}><Text style={s.buttonText}>Get</Text></Pressable>}
+   <View style={{flex:1}}><Text style={s.rowLabel}>Fast decoder (TAESD, {TAESD.approxMb} MB)</Text><Text style={s.note}>Downloaded automatically. Saves about 2 minutes per picture; turn off for slightly crisper detail.</Text></View>
+   {installed.taesd?<Switch value={config?.localImageFastDecode!==false} onValueChange={value=>update({localImageFastDecode:value})}/>:busy==='taesd'?<Text style={s.progress}>{progress}%</Text>:<Pressable disabled={!!busy} style={[s.button,!!busy&&s.disabled]} onPress={()=>download('taesd')}><Text style={s.buttonText}>Get</Text></Pressable>}
   </View>
  </View>;
 }

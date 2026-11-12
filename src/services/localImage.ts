@@ -53,6 +53,8 @@ export async function downloadLocalImageModel(id:string,onProgress:(percent:numb
  const files=await getModelFiles(model.repo).catch(()=>[]),meta=files.find(item=>item.name===model.file);
  const path=await downloadModelFile(model.repo,model.file,onProgress,meta?.size,meta?.sha256);
  await setInstalled(id,path);
+ // The 10 MB fast decoder cuts ~2 minutes per picture on phone CPUs; fetch it alongside.
+ if(!(await installedLocalImageFiles()).taesd)await downloadTaesd(()=>{}).catch(()=>'');
  return path;
 }
 export async function downloadTaesd(onProgress:(percent:number)=>void):Promise<string>{
@@ -115,8 +117,8 @@ export async function generateLocalImages(prompt:string,options:{count:number;sh
    try{
     const seed=Math.floor(Math.random()*2147483000)+1;
     const result=await Native!.generate({
-     mode:'img',jobId:'img-'+current,model:installed[model.id],taesd:config.localImageFastDecode&&installed.taesd?installed.taesd:'',
-     prompt,negative:model.negative+safetyNegative(prompt),width,height,
+     mode:'img',jobId:'img-'+current,model:installed[model.id],taesd:config.localImageFastDecode!==false&&installed.taesd?installed.taesd:'',
+     prompt:SEXUAL.test(prompt)?prompt+', adult':prompt,negative:model.negative+safetyNegative(prompt),width,height,
      steps:config.localImageSteps>0?config.localImageSteps:model.steps,cfg:model.cfg,sampler:model.sampler,scheduler:model.scheduler||'',
      seed,threads:config.localImageThreads||0,vaeTiling:true,
     });

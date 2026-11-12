@@ -1,3 +1,5 @@
+import{generateLocalVideo}from'./localVideo';
+import{LOCAL_VIDEO_MODEL_ID,isComfyVideoModel}from'./mediaModels';
 import{LOCAL_IMAGE_MODELS,generateLocalImages}from'./localImage';
 import{saveGenerationJob,listGenerationJobs,updateGenerationJob,deleteGenerationJob}from'./database';
 import{getComfyToken,loadConfig}from'./storage';
@@ -187,6 +189,18 @@ export function detectAudioStyle(text:string):AudioStyle{
 export async function createMedia(request:MediaRequest,onProgress?:MediaProgress):Promise<MediaOutcome>{
  const config=await loadConfig(),prompt=request.prompt.trim();
  if(!prompt)throw new Error('Describe what you want to create.');
+ const localVideoPick=request.model===LOCAL_VIDEO_MODEL_ID;
+ if(request.kind==='video'&&(localVideoPick||(config.videoEngine==='device'&&!isComfyVideoModel(request.model)))){
+  const source=request.inputAttachments?.find(item=>(item.kind||'image')==='image');
+  if(source)throw new Error('Turning a photo into a video needs Wan 2.2 on your ComfyUI server. On this phone, describe the video in words instead.');
+  const total=Math.max(1,Math.min(2,Math.floor(request.count)||1)),items:MessageAttachment[]=[],failures:string[]=[];
+  for(let index=0;index<total;index++){
+   try{items.push(await generateLocalVideo(prompt,{shape:request.shape==='portrait'?'portrait':'landscape',seconds:request.duration&&request.duration<=3?request.duration:2},update=>onProgress?.({...update,items:[...items],done:items.length,total,status:(total>1?'Clip '+(index+1)+' of '+total+' · ':'')+update.status})));}
+   catch(error){failures.push(error instanceof Error?error.message:String(error));break;}
+  }
+  if(!items.length)throw new Error(failures[0]||'The video could not be created.');
+  return{attachments:items,failures,queued:[],engine:'device'};
+ }
  const localPick=LOCAL_IMAGE_MODELS.some(item=>item.id===request.model);
  if(request.kind==='image'&&(localPick||(config.imageEngine==='device'&&!request.model))){
   const shape=request.shape||config.imageShape,id=localPick?request.model:undefined;
